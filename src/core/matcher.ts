@@ -116,12 +116,15 @@ export class Matcher {
       .sort((a, b) => b.score - a.score);
 
     // For "tell me about a time" questions, the Sheet says to use the Question Finder:
-    // prefer a close Finder entry over a story or answer picked directly.
+    // prefer the Finder entry that opens the top story, or a close Finder entry.
     if (behavioral && ranked[0] && this.sheet.pieces[ranked[0].id]!.kind !== 'finder') {
-      const finder = ranked.find((r) => this.sheet.pieces[r.id]!.kind === 'finder');
-      if (finder && finder.score >= 0.8 * ranked[0].score) {
+      const topId = ranked[0].id;
+      const opensTop = ranked.find((r) => this.sheet.pieces[r.id]!.links.some((l) => l.rel === 'primary' && l.target === topId));
+      const close = ranked.find((r) => this.sheet.pieces[r.id]!.kind === 'finder' && r.score >= 0.8 * ranked[0]!.score);
+      const finder = opensTop && opensTop.score >= 0.3 * ranked[0].score ? opensTop : close;
+      if (finder) {
         ranked.splice(ranked.indexOf(finder), 1);
-        ranked.unshift(finder);
+        ranked.unshift({ ...finder, score: Math.max(finder.score, ranked[0]!.score) });
       }
     }
     const top = ranked[0];

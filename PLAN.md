@@ -1,6 +1,6 @@
 # Interview Banner: Plan
 
-Status: **draft for final sign-off.** Nothing gets built until this is approved.
+Status: **approved and built.** Steps 1–3 of the build order are done and tested; steps 4–5 are written and need your Mac to test. See the README for setup.
 
 ## 1. What the tool is
 
@@ -177,3 +177,14 @@ Steps 1–2 and most of step 3 can be built and tested in the cloud. Steps 4–5
 - Choose the transcription service (after the measurements in step 4).
 - Set up the API keys (before step 2).
 - Decide where the Sheet lives for testing. This repository appears to be public, so the Sheet stays out of it. Either upload it each session, or make the repository private and keep a test copy here.
+
+## 9. Build status
+
+| Step | Status |
+|---|---|
+| 1. Sheet loader and exact-text checks | Done. Tested on a fictional Sheet and on your real Sheet: 428 paragraphs, 148 pieces, all 31 Question Finder pairings, both back-references found. |
+| 2. Matching | Done. The on-device matcher gets 95% right or acceptable on a 141-question test set, with 2.1% wrong. The Claude router is built, with ids-only structured output and a cached Sheet. Claude's accuracy and speed need an API key to measure. |
+| 3. Banner and review screen | Done. Ran the real app end to end under a virtual display: load, review, approve, test questions, follow-up in context, Not in Sheet, questions tray. |
+| 4. Listening | Written: system-audio capture through the Core Audio tap and Deepgram Flux streaming. The Deepgram client is tested against a local stand-in server. Real capture needs a Mac. |
+| 5. Final tuning | After your first Teams dry run. |
+

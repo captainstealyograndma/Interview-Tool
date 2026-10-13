@@ -126,3 +126,17 @@ describe('Sheet loader (fictional fixture)', () => {
     expect(() => verifyChunks(sheet, tampered)).toThrow(VerbatimError);
   });
 });
+
+describe('Pairing edits (review screen)', () => {
+  it('limits a Question Finder entry to chosen paragraphs and can reset', async () => {
+    const { editPairing } = await import('../src/core/review');
+    const { sheet } = await fixtureSheet();
+    const edited = editPairing(sheet, 'Q2', [4]);
+    expect(edited).toEqual({ finder: 'Q2', parts: [{ piece: 'Q2', opener: true }, { piece: 'S3', blocks: [4] }], source: 'edited' });
+    sheet.pairings.Q2 = edited;
+    expect(scriptText(renderPlan(sheet, expandIds(sheet, ['Q2'])))).toBe(
+      'I once had a week to find forty volunteers.\nResult: We had fifty-two volunteers by Friday.',
+    );
+    expect(editPairing(sheet, 'Q2', null).source).toBe('default');
+  });
+});

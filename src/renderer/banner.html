@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <title>Interview Banner</title>
+    <link rel="stylesheet" href="banner.css" />
+  </head>
+  <body>
+    <div id="banner" data-mode="idle">
+      <div id="labelbar">
+        <span id="state" class="chip"></span>
+        <span id="label"></span>
+        <span id="cue"></span>
+        <span class="spacer"></span>
+        <button id="runnerup" class="nodrag" hidden></button>
+        <span id="source" class="chip subtle"></span>
+        <span id="meter" title="Call audio level"><span id="meterfill"></span></span>
+        <button id="smaller" class="nodrag icon" title="Smaller text">A−</button>
+        <button id="larger" class="nodrag icon" title="Larger text">A+</button>
+        <button id="hide" class="nodrag icon" title="Hide (reopens on next question)">×</button>
+      </div>
+      <div id="scroller" class="nodrag"><div id="script"></div></div>
+      <div id="progress"><div id="bar"></div></div>
+    </div>
+    <script src="banner.js"></script>
+  </body>
+</html>

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <title>Interview Banner</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Interview Banner</h1>
+      <p class="sub">Shows your own Sheet, word for word, as the interviewer asks.</p>
+
+      <section class="card">
+        <h2>1 · Keys</h2>
+        <label class="field" for="anthropic">Anthropic API key <span id="anthropicState" class="pill"></span></label>
+        <div class="row">
+          <input id="anthropic" type="password" placeholder="sk-ant-…" autocomplete="off" />
+          <button id="saveAnthropic">Save</button>
+        </div>
+        <label class="field" for="deepgram">Deepgram API key <span id="deepgramState" class="pill"></span></label>
+        <div class="row">
+          <input id="deepgram" type="password" placeholder="Deepgram key" autocomplete="off" />
+          <button id="saveDeepgram">Save</button>
+        </div>
+        <p class="muted">Keys are encrypted with your Mac's Keychain and never leave this computer except to call those two services.</p>
+      </section>
+
+      <section class="card">
+        <h2>2 · Model that picks the script</h2>
+        <div class="row">
+          <label><input type="radio" name="model" value="claude-opus-5-5" /> Claude Opus 5.5 (most accurate)</label>
+          <label><input type="radio" name="model" value="claude-haiku-5-5" /> Claude Haiku 5.5 (fastest)</label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>3 · Your Sheet</h2>
+        <div class="row">
+          <button id="openSheet">Open Sheet…</button>
+          <button id="reloadSheet">Reload</button>
+          <button id="review" class="primary">Review &amp; approve…</button>
+        </div>
+        <div id="sheetInfo" class="muted">No Sheet loaded.</div>
+        <div class="row">
+          <button id="phrasings">Improve instant matching (optional)</button>
+          <span id="phrasingsState" class="muted"></span>
+        </div>
+        <div id="sheetMsg" class="msg"></div>
+      </section>
+
+      <section class="card">
+        <h2>4 · Interview</h2>
+        <div class="row">
+          <button id="start" class="primary">Start listening</button>
+          <button id="stop">Stop</button>
+          <span id="listenState" class="pill"></span>
+          <span id="routerState" class="pill"></span>
+          <span class="meter" title="Call audio level"><span id="meter"></span></span>
+        </div>
+        <p class="muted">
+          The first time, macOS asks for <b>Screen &amp; System Audio Recording</b> permission. The app only listens to the call's audio, never
+          your microphone, and saves nothing.
+        </p>
+        <div id="sessionMsg" class="msg"></div>
+        <div class="muted">Hearing: <span id="transcript"></span></div>
+      </section>
+
+      <section class="card">
+        <h2>Test without a call</h2>
+        <div class="row">
+          <input id="testq" type="text" placeholder="Type what an interviewer might say, e.g. Tell me about a time you failed." />
+          <button id="ask">Ask</button>
+        </div>
+        <p class="muted">Runs the same matching as a live call and shows the result in the banner.</p>
+      </section>
+
+      <section class="card">
+        <h2>Activity</h2>
+        <div id="log"></div>
+      </section>
+    </main>
+    <script src="home.js"></script>
+  </body>
+</html>

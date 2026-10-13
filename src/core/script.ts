@@ -188,7 +188,7 @@ export function renderPlan(sheet: Sheet, parts: PlanPart[], opts: { bridge?: str
     }
   }
   if (opts.bridge && blocks.length) {
-    blocks[0]!.chunks.unshift({ text: opts.bridge, kind: 'bridge', bold: false, italic: false });
+    blocks[0]!.chunks.unshift({ text: opts.bridge, kind: 'bridge', bold: false, italic: false }, { text: ' ', kind: 'space', bold: false, italic: false });
   }
   for (const b of blocks) verifyChunks(sheet, b.chunks);
   const first = parts[0] ? sheet.pieces[parts[0].piece] : undefined;

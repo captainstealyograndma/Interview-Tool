@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <title>Review your Sheet</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <main>
+      <div class="sticky">
+        <h1 id="title">Review your Sheet</h1>
+        <div class="row">
+          <span id="check" class="pill"></span>
+          <span id="approved" class="pill"></span>
+          <span class="grow"></span>
+          <button id="approve" class="primary">Approve this Sheet</button>
+        </div>
+        <nav class="tabs">
+          <button data-tab="pairings" class="active">Question Finder pairings</button>
+          <button data-tab="backrefs">Back-references</button>
+          <button data-tab="pieces">Everything, by section</button>
+        </nav>
+      </div>
+      <p class="muted" id="legend">
+        Normal text is what you'll say. <b>Bold</b> labels are shown as in your Sheet. <span class="seg-note">Highlighted</span> text is a note
+        to you and is never shown as words to say. Grey text is a title or condition.
+      </p>
+      <section id="tab-pairings"></section>
+      <section id="tab-backrefs" hidden></section>
+      <section id="tab-pieces" hidden></section>
+    </main>
+    <script src="review.js"></script>
+  </body>
+</html>

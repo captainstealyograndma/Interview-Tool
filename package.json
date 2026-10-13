@@ -10,10 +10,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "start": "npm run build && electron .",
-    "package": "npm run build && electron-builder --mac --dir",
+    "package": "npm run build && electron-builder --mac --dir && node scripts/adhoc-sign.mjs",
     "inspect-sheet": "npm run build && node dist/cli/inspect-sheet.js",
     "benchmark": "npm run build && node dist/cli/benchmark.js",
-    "make-fixture": "node scripts/make-fixture.mjs"
+    "make-fixture": "node scripts/make-fixture.mjs",
+    "app": "open \"release/mac-arm64/Interview Banner.app\" || open \"release/mac/Interview Banner.app\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
