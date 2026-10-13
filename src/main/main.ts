@@ -280,6 +280,7 @@ function registerIpc() {
   ipcMain.handle('review:approve', () => {
     if (!sheet || !report?.ok) return summary();
     store.saveReview(sheet.hash, { ...store.review(sheet.hash), approved: true });
+    broadcast('sheet', summary());
     return summary();
   });
   ipcMain.handle('phrasings:generate', async () => {

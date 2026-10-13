@@ -10,25 +10,14 @@ The Sheet is the only source of answers. The AI only chooses which numbered piec
 
 You need macOS 14.2 or newer (Tahoe is fine).
 
-1. **Install the tools.** Open **Terminal** and run:
+1. Install **Node.js** from <https://nodejs.org>. Click the LTS download, open the `.pkg` file, and click through the installer.
+2. Open **Terminal** (press ⌘ + Space, type `Terminal`, press Return), paste this line, and press Return:
    ```
-   xcode-select --install
+   curl -fsSL https://raw.githubusercontent.com/captainstealyograndma/Interview-Tool/refs/heads/claude/interview-prep-tool-brainstorm-9npr4a/install-mac.sh | bash
    ```
-   Then install **Node.js (LTS)** from <https://nodejs.org> using the macOS installer.
+   It downloads the code, builds the app, puts **Interview Banner** in your Applications folder, and opens it. It takes about 5–10 minutes.
 
-2. **Download the app's code and build it.** In Terminal:
-   ```
-   cd ~/Documents
-   git clone https://github.com/captainstealyograndma/Interview-Tool.git
-   cd Interview-Tool
-   git checkout claude/interview-prep-tool-brainstorm-9npr4a
-   npm install
-   npm run package
-   ```
-   `npm run package` creates the app at `release/mac-arm64/Interview Banner.app` (on an Intel Mac, `release/mac/`). You can drag it into **Applications**.
-
-3. **Open it:** `npm run app`, or double-click the app.
-   - If macOS says it can't verify the app, right-click it and choose **Open**.
+To update later, run the same line again.
 
 ## First run
 

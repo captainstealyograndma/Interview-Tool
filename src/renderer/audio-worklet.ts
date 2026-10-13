@@ -55,3 +55,5 @@ class PcmCapture extends AudioWorkletProcessor {
 }
 
 registerProcessor('pcm-capture', PcmCapture);
+
+export {};
