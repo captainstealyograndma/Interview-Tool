@@ -39,8 +39,9 @@ curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" -o "$TM
 tar -xzf "$TMP/source.tar.gz" -C "$TMP"
 SRC="$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
 mkdir -p "$DEST"
-# Keep already-downloaded building blocks and your private folder between updates.
-rsync -a --delete --exclude node_modules --exclude private --exclude release "$SRC/" "$DEST/"
+# Replace the code but keep already-downloaded building blocks and your private folder between updates.
+find "$DEST" -mindepth 1 -maxdepth 1 ! -name node_modules ! -name private ! -name release -exec rm -rf {} +
+cp -R "$SRC/." "$DEST/"
 rm -rf "$TMP"
 cd "$DEST"
 
