@@ -1,0 +1,55 @@
+{
+  "name": "interview-banner",
+  "productName": "Interview Banner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live interview teleprompter that shows your own prep Sheet, word for word.",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "start": "npm run build && electron .",
+    "package": "npm run build && electron-builder --mac --dir",
+    "inspect-sheet": "npm run build && node dist/cli/inspect-sheet.js",
+    "benchmark": "npm run build && node dist/cli/benchmark.js",
+    "make-fixture": "node scripts/make-fixture.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "@xmldom/xmldom": "0.9.12",
+    "jszip": "3.10.2",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "@types/ws": "8.18.1",
+    "docx": "9.8.0",
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "vitest": "5.0.2"
+  },
+  "build": {
+    "appId": "com.interviewbanner.app",
+    "productName": "Interview Banner",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "extendInfo": {
+        "NSAudioCaptureUsageDescription": "Interview Banner listens to the call audio so it can show the matching part of your Sheet.",
+        "NSMicrophoneUsageDescription": "Interview Banner does not use your microphone; macOS may ask while setting up audio capture."
+      }
+    }
+  }
+}

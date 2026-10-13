@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+coverage/
+*.log
+.DS_Store
+
+# Personal material (your real Sheet, test sets derived from it, reports).
+# Never committed while the repository is public.
+private/
