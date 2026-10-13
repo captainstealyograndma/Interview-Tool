@@ -232,3 +232,26 @@ describe('Session engine', () => {
     expect(scriptText({ label: '', cues: [], pieces: [], blocks: engine.banner.blocks })).toBe('They went up every year, and I took the 401(k) seminar for fun.');
   });
 });
+
+describe('Reading protection', () => {
+  it("doesn't cover the script you're reading with a guess from an interviewer comment", async () => {
+    const { sheet } = await fixtureSheet();
+    const engine = new Engine(sheet, new Matcher(sheet), new FakeRouter(() => decision({ ids: ['K1'] })));
+    await engine.simulate("What's your greatest weakness?");
+    const confirmed = engine.banner;
+    engine.handle({ type: 'update', turn: 5, text: "That's a really great example of teamwork and conflict" });
+    expect(engine.banner).toBe(confirmed);
+  });
+
+  it('a withdrawn early guess returns the same script version (so scroll position is kept)', async () => {
+    const { sheet } = await fixtureSheet();
+    const engine = new Engine(sheet, new Matcher(sheet), new FakeRouter((r) => decision(r.question.includes('weakness') ? { ids: ['K1'] } : { action: 'ignore' })));
+    await engine.simulate("What's your greatest weakness?");
+    const confirmed = engine.banner;
+    engine.handle({ type: 'update', turn: 7, text: 'So how do your teams usually handle a conflict' });
+    expect(engine.banner.mode).toBe('provisional');
+    engine.handle({ type: 'end', turn: 7, text: 'So how do your teams usually handle a conflict, I wonder.' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(engine.banner.version).toBe(confirmed.version);
+  });
+});

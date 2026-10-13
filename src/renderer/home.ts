@@ -111,7 +111,7 @@ async function startAudio(): Promise<void> {
   for (const t of stream.getVideoTracks()) t.enabled = false;
   const audioTracks = stream.getAudioTracks();
   if (!audioTracks.length) throw new Error('macOS did not provide call audio. Check Screen & System Audio Recording permission.');
-  audioCtx = new AudioContext({ sampleRate: 16000 });
+  audioCtx = new AudioContext(); // the worklet resamples to 16 kHz
   await audioCtx.audioWorklet.addModule('audio-worklet.js');
   const source = audioCtx.createMediaStreamSource(new MediaStream(audioTracks));
   const node = new AudioWorkletNode(audioCtx, 'pcm-capture');

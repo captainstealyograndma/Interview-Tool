@@ -18,6 +18,8 @@ let current: BannerView | undefined;
 let fontSize = 28;
 let programmaticScroll = false;
 let lastScrollSent = 0;
+/** Scroll position per script version, so a withdrawn early guess returns you to where you were. */
+const scrollMemory = new Map<number, number>();
 
 function setFont(px: number) {
   fontSize = px;
@@ -76,9 +78,9 @@ function render(v: BannerView) {
   } else {
     renderBlocks(script, v.blocks, v.unmetBackrefs);
   }
-  if (isNewScript) {
+  if (scrollMemory.has(v.version) || isNewScript) {
     programmaticScroll = true;
-    scroller.scrollTop = 0;
+    scroller.scrollTop = scrollMemory.get(v.version) ?? 0;
     requestAnimationFrame(() => (programmaticScroll = false));
   }
   updateProgress();
@@ -87,6 +89,7 @@ function render(v: BannerView) {
 scroller.addEventListener('scroll', () => {
   updateProgress();
   if (programmaticScroll) return;
+  if (current && current.mode !== 'provisional') scrollMemory.set(current.version, scroller.scrollTop);
   const now = Date.now();
   if (now - lastScrollSent > 200) {
     lastScrollSent = now;

@@ -11,7 +11,7 @@ import { displayText } from './catalog';
 import type { Matcher, MatchResult } from './matcher';
 import type { RouteDecision, Router } from './router';
 import { expandIds, pieceLabel, renderPlan, type Script, type ScriptBlock } from './script';
-import { BEHAVIORAL, DIRECT, isBackchannel, wordCount } from './text';
+import { BEHAVIORAL, DIRECT, isBackchannel, looksLikeQuestion, wordCount } from './text';
 import type { Sheet } from './types';
 
 export type TurnEventType = 'start' | 'update' | 'eager-end' | 'resumed' | 'end';
@@ -66,7 +66,7 @@ export interface EngineOptions {
   scrollQuietMs: number;
 }
 
-const DEFAULTS: EngineOptions = { provisionalMin: 0.4, offlineMin: 0.45, routerTimeoutMs: 3500, scrollQuietMs: 1500 };
+const DEFAULTS: EngineOptions = { provisionalMin: 0.4, offlineMin: 0.45, routerTimeoutMs: 3500, scrollQuietMs: 4000 };
 
 interface Pending {
   text: string;
@@ -195,6 +195,8 @@ export class Engine extends EventEmitter {
 
   private onPartial(turn: number, text: string) {
     if (wordCount(text) < 5 || isBackchannel(text)) return;
+    // Comments ("That's a great example") never cover the script you're reading; only questions do.
+    if (!looksLikeQuestion(text)) return;
     if (this.view.turn === turn && this.view.mode !== 'provisional') return; // already confirmed this turn
     if (Date.now() - this.lastScrollAt < this.opts.scrollQuietMs) return; // you're reading
     const m = this.matcher.match(text, { shown: this.shown });
@@ -392,8 +394,9 @@ export class Engine extends EventEmitter {
     });
   }
 
+  /** Back to the last confirmed script, same version, so the banner restores your scroll position. */
   private revert() {
-    this.view = { ...this.lastConfirmed, version: ++this.version };
+    this.view = this.lastConfirmed;
     this.emit('banner', this.view);
   }
 

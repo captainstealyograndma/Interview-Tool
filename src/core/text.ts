@@ -102,6 +102,15 @@ export const MORE = /\b(tell me more|say more|go on|what happened (next|then)|el
 export const ASK_PROMPT =
   /\b(any questions for (me|us)|questions (do|did) you have|what questions|anything you('d| would) like to ask|anything (you want )?to ask (me|us)|questions for me)\b/i;
 
+const QUESTION_START =
+  /^(so,?\s+|and\s+|okay,?\s+|ok,?\s+|great,?\s+|alright,?\s+|now,?\s+)?(tell|what|what's|how|why|can|could|would|do|did|have|describe|give|walk|share|talk|when|where|who|is|are|which|if)\b/i;
+
+/** True when the interviewer is (probably) asking the candidate something, not commenting. */
+export function looksLikeQuestion(text: string): boolean {
+  if (BEHAVIORAL.test(text) || ASK_PROMPT.test(text) || /\?\s*$/.test(text)) return true;
+  return (text.match(/[^.!?]+[.!?]*/g) ?? []).some((s) => QUESTION_START.test(s.trim()));
+}
+
 const BACKCHANNEL = /^(ok(ay)?|great|right|sure|yeah|yes|mm+-?hm+|uh-?huh|got it|perfect|nice|cool|wonderful|awesome|thanks?( you)?|makes sense|i see|interesting|wow|good)[.!,]*$/i;
 
 export function isBackchannel(text: string): boolean {
