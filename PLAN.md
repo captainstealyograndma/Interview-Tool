@@ -62,7 +62,7 @@ The Sheet's own matching rules come first. These are the Question Finder, the "U
 
 - The tool captures **only the call audio** (the sound coming out of your Mac), not your microphone, so you reading aloud never confuses it. It uses macOS's built-in system-audio capture, so no extra audio software is needed.
 - A small sound meter in the banner shows that it's actually hearing the call. This matters because macOS can fail to capture audio without showing any error.
-- The audio streams to a cloud transcription service that detects when the interviewer has finished speaking. The service is primed with your Sheet's terms (TTA, LL.M., qui tam, 338(h)(10), case names and so on).
+- The audio streams to a cloud transcription service that detects when the interviewer has finished speaking. The service is primed with your Sheet's own terms (acronyms, names, technical words).
 - **Nothing is recorded or saved.**
 
 ### 3.3 Matching at two speeds

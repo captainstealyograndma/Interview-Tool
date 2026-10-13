@@ -9,14 +9,14 @@ afterEach(() => server?.close());
 
 describe('Deepgram Flux client', () => {
   it('builds the streaming URL with turn detection and keyterms', () => {
-    const url = new URL(fluxUrl({ apiKey: 'k', keyterms: ['LL.M.', 'qui tam'] }));
+    const url = new URL(fluxUrl({ apiKey: 'k', keyterms: ['M.B.A.', 'cash flow'] }));
     expect(url.host).toBe('api.deepgram.com');
     expect(url.pathname).toBe('/v2/listen');
     expect(url.searchParams.get('model')).toBe('flux-general-en');
     expect(url.searchParams.get('encoding')).toBe('linear16');
     expect(url.searchParams.get('sample_rate')).toBe('16000');
     expect(url.searchParams.get('eager_eot_threshold')).toBe('0.5');
-    expect(url.searchParams.getAll('keyterm')).toEqual(['LL.M.', 'qui tam']);
+    expect(url.searchParams.getAll('keyterm')).toEqual(['M.B.A.', 'cash flow']);
   });
 
   it('authenticates, streams audio, maps turn events and closes cleanly', async () => {

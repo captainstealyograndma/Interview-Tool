@@ -39,7 +39,7 @@ You need macOS 14.2 or newer (Tahoe is fine).
    - The app checks every paragraph word for word. You'll see **word-for-word check passed**.
 4. **Review & approve.** In the review window:
    - **Question Finder pairings:** each entry shows its opening line plus the part of the story your Sheet names. If you want different paragraphs, change the checkboxes.
-   - **Back-references:** phrases like "the pay pattern I told you about" get a faint underline until that story has come up.
+   - **Back-references:** phrases like "the project I told you about" get a faint underline until that story has come up.
    - **Everything, by section:** <mark>highlighted</mark> text is a note to you and is never shown as words to say.
 
    Click **Approve this Sheet** when it looks right.

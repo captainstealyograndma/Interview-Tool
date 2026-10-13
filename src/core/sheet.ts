@@ -141,7 +141,7 @@ const NOTE_PAREN = /^(story\s*\d|stories\b|more\s*:|then\b|if they\b|this one\b|
 /**
  * Sentences that are instructions to you rather than words to say. Both parts
  * must match: an instruction opening AND a pointer to another part of the Sheet.
- * ("Then in closing, I put it all together" is a spoken sentence, not an instruction.)
+ * ("Then I compared the counts against the invoices" is a spoken sentence, not an instruction.)
  */
 const INSTRUCTION_START = /^(if they (want|need|prefer|push)[^:]*,|then\b|backups?:|for an? [^,]{1,40}, use\b)/i;
 const POINTER = /\bStor(?:y|ies) \d+|\bunder [A-Z]|resume walkthrough|\bsee "/;
