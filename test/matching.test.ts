@@ -162,12 +162,68 @@ describe('Session engine', () => {
     expect(engine.statusView.routerState).toBe('error');
   });
 
-  it('falls back when Claude is too slow', async () => {
+  it('never throws away a slow Claude answer: instant match first, then Claude replaces it', async () => {
     const { sheet } = await fixtureSheet();
-    const slow = new FakeRouter(() => new Promise((r) => setTimeout(() => r(decision({ ids: ['K2'] })), 500)));
+    const slow = new FakeRouter(() => new Promise((r) => setTimeout(() => r(decision({ ids: ['K2'] })), 300)));
     const engine = new Engine(sheet, new Matcher(sheet), slow, { routerTimeoutMs: 50 });
+    const done = engine.simulate("What's your greatest weakness?");
+    await new Promise((r) => setTimeout(r, 120));
+    expect(engine.banner.blocks[0]!.piece).toBe('K1'); // confident instant match while waiting
+    expect(engine.banner.source).toBe('instant');
+    await done;
+    expect(engine.banner.blocks[0]!.piece).toBe('K2'); // Claude's answer, when it arrives
+    expect(engine.banner.source).toBe('claude');
+    expect(engine.statusView.routerState).toBe('ok');
+  });
+
+  it('for a question the instant matcher cannot place, waits for slow Claude instead of flashing "Not in Sheet"', async () => {
+    const { sheet } = await fixtureSheet();
+    const slow = new FakeRouter(() => new Promise((r) => setTimeout(() => r(decision({ ids: ['Q1'] })), 300)));
+    const engine = new Engine(sheet, new Matcher(sheet), slow, { routerTimeoutMs: 50 });
+    const seen: string[] = [];
+    engine.on('banner', (v) => seen.push(v.mode));
+    await engine.simulate('Can you walk me through a specific project where you had to work through something complex or ambiguous?');
+    expect(seen).not.toContain('not-in-sheet');
+    expect(engine.banner.mode).toBe('confirmed');
+    expect(engine.banner.blocks[0]!.piece).toBe('Q1');
+  });
+
+  it("if you're already reading the instant match, a late Claude answer becomes the runner-up instead", async () => {
+    const { sheet } = await fixtureSheet();
+    const slow = new FakeRouter(() => new Promise((r) => setTimeout(() => r(decision({ ids: ['K2'] })), 300)));
+    const engine = new Engine(sheet, new Matcher(sheet), slow, { routerTimeoutMs: 50 });
+    const done = engine.simulate("What's your greatest weakness?");
+    await new Promise((r) => setTimeout(r, 120));
+    engine.userScrolled();
+    await done;
+    expect(engine.banner.blocks[0]!.piece).toBe('K1');
+    expect(engine.banner.runnerUp?.id).toBe('K2');
+  });
+
+  it('gives up on Claude after the limit and keeps the instant match or shows the flag', async () => {
+    const { sheet } = await fixtureSheet();
+    const never = new FakeRouter(() => new Promise(() => {}));
+    const engine = new Engine(sheet, new Matcher(sheet), never, { routerTimeoutMs: 30, routerGiveUpMs: 120 });
     await engine.simulate("What's your greatest weakness?");
     expect(engine.banner.blocks[0]!.piece).toBe('K1');
+    expect(engine.statusView.routerState).toBe('error');
+    await engine.simulate('What is your favorite color of the rainbow?');
+    expect(engine.banner.mode).toBe('not-in-sheet');
+  });
+
+  it('drops a late Claude answer once the next question has arrived', async () => {
+    const { sheet } = await fixtureSheet();
+    const router = new FakeRouter((req) =>
+      req.question.includes('weakness')
+        ? new Promise((r) => setTimeout(() => r(decision({ ids: ['K2'] })), 300)) // slow answer to the first question
+        : decision({ ids: ['T1'] }),
+    );
+    const engine = new Engine(sheet, new Matcher(sheet), router, { routerTimeoutMs: 50 });
+    const first = engine.simulate("What's your greatest weakness?");
+    await new Promise((r) => setTimeout(r, 80));
+    await engine.simulate('Tell me about your grades.');
+    await first;
+    expect(engine.banner.blocks[0]!.piece).toBe('T1');
   });
 
   it('shows a dimmed early guess while the interviewer is talking, then confirms', async () => {

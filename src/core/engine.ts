@@ -60,13 +60,18 @@ export interface EngineOptions {
   provisionalMin: number;
   /** Minimum instant-match score to show an answer when Claude is unavailable. */
   offlineMin: number;
-  /** Give up waiting for Claude after this long and use the instant match. */
+  /** If Claude hasn't answered after this long, show a confident instant match meanwhile (Claude keeps working). */
   routerTimeoutMs: number;
+  /** Stop waiting for Claude on a question after this long. */
+  routerGiveUpMs: number;
   /** Don't swap in an early guess within this long after you scrolled. */
   scrollQuietMs: number;
 }
 
-const DEFAULTS: EngineOptions = { provisionalMin: 0.4, offlineMin: 0.45, routerTimeoutMs: 3500, scrollQuietMs: 4000 };
+const DEFAULTS: EngineOptions = { provisionalMin: 0.4, offlineMin: 0.45, routerTimeoutMs: 3500, routerGiveUpMs: 15000, scrollQuietMs: 4000 };
+
+const SLOW = Symbol('slow');
+const after = (ms: number) => new Promise<typeof SLOW>((r) => setTimeout(() => r(SLOW), ms));
 
 interface Pending {
   text: string;
@@ -261,23 +266,63 @@ export class Engine extends EventEmitter {
     }
     const pending = this.startRoute(turn, text);
     this.turns.push(text);
-    let decision: RouteDecision | null = null;
-    if (pending) {
-      const timeout = new Promise<null>((r) => setTimeout(() => r(null), this.opts.routerTimeoutMs));
-      decision = await Promise.race([pending.promise, timeout]);
-      if (!decision) {
-        pending.controller.abort();
-        const reason = pending.error instanceof Error ? pending.error.message : 'timed out';
-        this.setStatus({ routerState: 'error', message: `Claude unavailable (${reason}); using instant match.` });
-        this.log('router-fallback', { turn, reason });
-      } else {
-        this.setStatus({ routerState: 'ok', lastLatencyMs: decision.latencyMs, message: undefined });
-      }
-      this.pending.delete(turn);
+    if (!pending) {
+      if (turn < this.latestEnded) return; // a newer question already arrived
+      this.applyInstant(turn, text, 'instant', true);
+      return;
     }
+    const first = await Promise.race([pending.promise, after(this.opts.routerTimeoutMs)]);
+    if (first !== SLOW) {
+      this.pending.delete(turn);
+      this.finish(turn, text, first, pending, false);
+      return;
+    }
+    // Claude is slow. Show a confident instant match meanwhile (never a "Not in Sheet" flag),
+    // and keep waiting: Claude's answer is never thrown away just for being slow.
+    this.setStatus({ routerState: 'ok', message: 'Claude is taking a little longer; the banner updates when it answers.' });
+    this.log('router-slow', { turn });
+    if (turn >= this.latestEnded) this.applyInstant(turn, text, 'instant', false);
+    const late = await Promise.race([pending.promise, after(Math.max(0, this.opts.routerGiveUpMs - this.opts.routerTimeoutMs))]);
+    this.pending.delete(turn);
+    if (late === SLOW) {
+      pending.controller.abort();
+      this.finish(turn, text, null, pending, true, 'no answer after 15 seconds');
+      return;
+    }
+    this.finish(turn, text, late, pending, true);
+  }
+
+  private finish(turn: number, text: string, decision: RouteDecision | null, pending: Pending, late: boolean, reason?: string) {
+    if (!decision) {
+      const why = reason ?? (pending.error instanceof Error ? pending.error.message : 'no answer');
+      this.setStatus({ routerState: 'error', message: `Claude unavailable (${why}); using instant match.` });
+      this.log('router-fallback', { turn, reason: why });
+      if (turn < this.latestEnded) return;
+      // Keep an instant match already showing for this question; otherwise show the instant match or the flag.
+      if (late && this.view.turn === turn && this.view.mode === 'confirmed') return;
+      this.applyInstant(turn, text, 'offline', true);
+      return;
+    }
+    this.setStatus({ routerState: 'ok', lastLatencyMs: decision.latencyMs, message: undefined });
     if (turn < this.latestEnded) return; // a newer question already arrived
-    if (decision) this.apply(turn, text, decision);
-    else this.applyInstant(turn, text, this.router ? 'offline' : 'instant');
+    if (late) this.applyLate(turn, text, decision);
+    else this.apply(turn, text, decision);
+  }
+
+  /** Claude answered after the instant match was already showing for this question. */
+  private applyLate(turn: number, question: string, d: RouteDecision) {
+    const v = this.view;
+    const instantShowing = v.turn === turn && v.mode === 'confirmed' && v.source === 'instant';
+    if (instantShowing && this.lastScrollAt > this.viewShownAt) {
+      // You're already reading it: keep it, and offer Claude's pick one click away.
+      const claudeFirst = d.action === 'show' && d.ids.length ? this.firstPiece(d.ids) : undefined;
+      if (claudeFirst && claudeFirst !== v.blocks[0]?.piece) {
+        this.setView({ ...v, runnerUp: { id: d.ids[0]!, label: pieceLabel(this.sheet, d.ids[0]!) } });
+      }
+      return;
+    }
+    if (instantShowing && d.action === 'ignore') return;
+    this.apply(turn, question, d);
   }
 
   private apply(turn: number, question: string, d: RouteDecision) {
@@ -321,7 +366,7 @@ export class Engine extends EventEmitter {
     });
   }
 
-  private applyInstant(turn: number, question: string, source: 'instant' | 'offline') {
+  private applyInstant(turn: number, question: string, source: 'instant' | 'offline', flagIfNoMatch: boolean) {
     const m: MatchResult = this.matcher.match(question, { shown: this.shown });
     this.log('instant', { turn, question, ranked: m.ranked.slice(0, 3) });
     if (m.score >= this.opts.offlineMin && m.ids.length) {
@@ -334,6 +379,7 @@ export class Engine extends EventEmitter {
       });
       return;
     }
+    if (!flagIfNoMatch) return; // still waiting for Claude
     const looksLikeQuestion = /\?\s*$/.test(question) || BEHAVIORAL.test(question) || DIRECT.test(question.trim());
     if (!looksLikeQuestion) {
       if (this.view.mode === 'provisional' && this.view.turn === turn) this.revert();
