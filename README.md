@@ -30,7 +30,9 @@ To update later, run the same line again.
    - **Save a blank Sheet template…** gives you a Word file in the structure the app reads, for future interviews.
 4. **Review & approve.** Check the Question Finder pairings, then **Approve this Sheet**. On approval the app also asks Claude for about 12 alternative wordings of every item (about a minute, in the background). Those only help it recognize questions faster; they are never shown.
 5. **Test without a call.** Type things an interviewer might say and click **Ask**.
-6. **Start listening.** The first time, macOS asks to allow **Screen & System Audio Recording** for Interview Banner 2. Click **Allow**. If you missed it: System Settings → Privacy & Security → Screen & System Audio Recording → turn on **Interview Banner 2**, then quit and reopen the app.
+6. **Start listening.** The first time, and again after each update, macOS asks to allow **Screen & System Audio Recording** for Interview Banner 2. Click **Allow**. If you missed it: System Settings → Privacy & Security → Screen & System Audio Recording → turn on **Interview Banner 2**, then quit and reopen the app.
+
+   If the app is listed as allowed but still can't hear the call (this can happen after an update), select it in that list, click the **−** button to remove it, then click **Start listening** again and **Allow**.
 
 **Do a dry run** on a Teams call with a friend before the real interview.
 

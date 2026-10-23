@@ -14,6 +14,7 @@ REPO="captainstealyograndma/Interview-Tool"
 BRANCH="${INTERVIEW_BANNER_BRANCH:-claude/interview-prep-tool-brainstorm-9npr4a}"
 DEST="${INTERVIEW_BANNER_DIR:-$HOME/InterviewBanner2}"
 APP_NAME="Interview Banner 2.app"
+BUNDLE_ID="com.interviewbanner.app2"
 
 bold() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 fail() {
@@ -68,6 +69,12 @@ if ! { rm -rf "$TARGET_DIR/$APP_NAME" && cp -R "$BUILT" "$TARGET_DIR/"; } 2>/dev
   rm -rf "$TARGET_DIR/$APP_NAME"
   cp -R "$BUILT" "$TARGET_DIR/"
 fi
+# Only one copy should exist, so Spotlight shows the app once.
+rm -rf release
+# macOS ties the audio-capture permission to the exact build. Clear the old grant so it asks
+# again cleanly instead of showing "allowed" while silently refusing the updated app.
+tccutil reset All "$BUNDLE_ID" >/dev/null 2>&1 || true
 
 bold "Done! Interview Banner 2 is in $TARGET_DIR. Opening it now…"
+printf 'When you click "Start listening", macOS will ask to allow Screen & System Audio Recording. Click Allow.\n'
 open "$TARGET_DIR/$APP_NAME"

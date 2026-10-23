@@ -171,7 +171,11 @@ async function startAudio(): Promise<void> {
   stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: { width: 320, height: 240, frameRate: 1 } });
   for (const t of stream.getVideoTracks()) t.enabled = false;
   const audioTracks = stream.getAudioTracks();
-  if (!audioTracks.length) throw new Error('macOS did not provide call audio. Check Screen & System Audio Recording permission.');
+  if (!audioTracks.length) {
+    throw new Error(
+      'macOS did not provide call audio. Open System Settings → Privacy & Security → Screen & System Audio Recording. If Interview Banner 2 is already listed as allowed, select it, click the − button to remove it, then click Start listening again and Allow.',
+    );
+  }
   audioCtx = new AudioContext(); // the worklet resamples to 16 kHz
   await audioCtx.audioWorklet.addModule('audio-worklet.js');
   const source = audioCtx.createMediaStreamSource(new MediaStream(audioTracks));
@@ -187,7 +191,7 @@ async function startAudio(): Promise<void> {
     if (e.data.rms > 0.002) silentSince = Date.now();
     else if (Date.now() - silentSince > 20000) {
       $('sessionMsg').textContent =
-        'No call audio for 20 seconds. If someone is talking, open System Settings → Privacy & Security → Screen & System Audio Recording and allow Interview Banner 2, then restart it.';
+        'No call audio for 20 seconds. If someone is talking: open System Settings → Privacy & Security → Screen & System Audio Recording. If Interview Banner 2 is listed as allowed, select it and click − to remove it; then Stop, Start listening again, and Allow.';
       silentSince = Date.now();
     }
   };
