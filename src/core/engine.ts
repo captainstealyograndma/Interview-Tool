@@ -5,7 +5,9 @@
 //   and locks in. If Claude is slow or unreachable, the instant match is used.
 // - Once you scroll a script, nothing replaces it until the next question.
 // - Interviewer turns that arrive in pieces (a preamble, then the question, then
-//   "what was the situation?") are joined back into one question.
+//   "what was the situation?") are joined back into one question. Joining stops
+//   at an interviewer "mm-hmm" (you are talking), at an answer shown more than a
+//   few seconds ago, and after 20 seconds in all.
 // - A follow-up or conditional answer is never shown unless its story was just
 //   shown; a behavioral question never gets a follow-up or resume line.
 // - When the Sheet has no answer and a drafter is available, a drafted answer
@@ -42,6 +44,8 @@ export interface BannerView {
   closest: { id: string; label: string; blocks: ScriptBlock[] }[];
   /** Stories referred to by underlined phrases that have not been shown yet. */
   unmetBackrefs: string[];
+  /** Ids of the pieces on screen, in order ('draft' for a drafted answer). */
+  pieces: string[];
   runnerUp?: { id: string; label: string };
   confidence?: number;
   latencyMs?: number;
@@ -83,6 +87,10 @@ export interface EngineOptions {
   scrollQuietMs: number;
   /** Interviewer turns that start within this long after the previous one ended are one question. */
   clusterGapMs: number;
+  /** Pieces of one question never span more than this, first word to last. */
+  clusterMaxSpanMs: number;
+  /** A turn whose answer was shown longer ago than this is a finished question; later turns are new. */
+  answeredStaleMs: number;
 }
 
 const DEFAULTS: EngineOptions = {
@@ -92,6 +100,8 @@ const DEFAULTS: EngineOptions = {
   routerGiveUpMs: 15000,
   scrollQuietMs: 4000,
   clusterGapMs: 4000,
+  clusterMaxSpanMs: 20000,
+  answeredStaleMs: 10000,
 };
 
 const SLOW = Symbol('slow');
@@ -104,12 +114,17 @@ interface Pending {
   error?: unknown;
 }
 
-type Outcome = 'show' | 'drafted' | 'ignore' | 'none';
+type Outcome = 'show' | 'drafted' | 'ignore' | 'backchannel' | 'none';
 
 const DRAFT_UPDATE_MS = 90;
 
-/** A short tail that only makes sense with what came before it ("What was the situation? And how did you handle it?"). */
-const FRAGMENT_START = /^(and|or|so|what|how|why|which|that|then|also|but|plus|was|were|did|do|does)\b/i;
+/**
+ * A short tail that only makes sense with the question just asked ("What was the
+ * situation? And how did you handle it?"). Anything that could be a new question
+ * ("And also, tell me about your grades", "How about a time you failed?") is not one.
+ */
+const FRAGMENT_START = /^(and|or|so|what|how|why|which|that|then|but|plus|was|were|did|do|does)\b/i;
+const NEW_QUESTION_MARKERS = /\b(tell|describe|give|walk|share|talk|example|a time|about a|another|also|next|what about|how about|instead|different|other|your|you've|you have|have you|did you ever|can you|could you|would you)\b/i;
 const FRAGMENT_MAX_WORDS = 12;
 
 export class Engine extends EventEmitter {
@@ -170,7 +185,7 @@ export class Engine extends EventEmitter {
   }
 
   private emptyView(): BannerView {
-    return { mode: 'idle', source: 'instant', label: '', cues: [], blocks: [], closest: [], unmetBackrefs: [], question: '', turn: -1, version: 0 };
+    return { mode: 'idle', source: 'instant', label: '', cues: [], blocks: [], closest: [], unmetBackrefs: [], pieces: [], question: '', turn: -1, version: 0 };
   }
 
   private setView(v: Omit<BannerView, 'version'>) {
@@ -247,13 +262,19 @@ export class Engine extends EventEmitter {
   private clusterBefore(turn: number): { turn: number; text: string }[] {
     if (this.isolated.has(turn)) return [];
     const out: { turn: number; text: string }[] = [];
+    const start = this.turnStart.get(turn) ?? 0;
     let cur = turn;
     for (let i = this.finals.length - 1; i >= 0; i--) {
       const prev = this.finals[i]!;
       if (prev.turn >= cur) continue;
       if (this.isolated.has(prev.turn)) break;
-      const gap = (this.turnStart.get(cur) ?? 0) - (this.turnEnd.get(prev.turn) ?? 0);
-      if (gap > this.opts.clusterGapMs) break;
+      const outcome = this.outcome.get(prev.turn) ?? 'none';
+      // "Mm-hmm", "right": the interviewer is listening to you answer. Whatever came before is done.
+      // An answered question is closed too: only unanswered pieces (a preamble, a half sentence) are joined.
+      if (outcome === 'backchannel' || outcome === 'show' || outcome === 'drafted') break;
+      const prevEnd = this.turnEnd.get(prev.turn) ?? 0;
+      if ((this.turnStart.get(cur) ?? 0) - prevEnd > this.opts.clusterGapMs) break;
+      if (start - (this.turnStart.get(prev.turn) ?? 0) > this.opts.clusterMaxSpanMs) break;
       out.unshift(prev);
       cur = prev.turn;
     }
@@ -267,7 +288,8 @@ export class Engine extends EventEmitter {
   }
 
   private isFragment(text: string): boolean {
-    return wordCount(text) <= FRAGMENT_MAX_WORDS && FRAGMENT_START.test(text.trim());
+    const t = text.trim();
+    return wordCount(t) <= FRAGMENT_MAX_WORDS && FRAGMENT_START.test(t) && !NEW_QUESTION_MARKERS.test(t);
   }
 
   // ---------------------------------------------------------------- partials
@@ -296,6 +318,7 @@ export class Engine extends EventEmitter {
       blocks: script.blocks,
       closest: [],
       unmetBackrefs: this.unmet(script, false),
+      pieces: script.pieces,
       ...(m.runnerUp ? { runnerUp: { id: m.runnerUp, label: pieceLabel(this.sheet, m.runnerUp) } } : {}),
       confidence: m.score,
       question,
@@ -347,14 +370,20 @@ export class Engine extends EventEmitter {
     this.latestEnded = Math.max(this.latestEnded, turn);
     if (isBackchannel(text)) {
       this.finals.push({ turn, text });
-      this.outcome.set(turn, 'ignore');
+      this.outcome.set(turn, 'backchannel');
       if (this.view.mode === 'provisional' && this.view.turn === turn) this.revert();
       return;
     }
     // "What was the situation? And how did you handle it?" right after the question it belongs to:
     // the answer is already showing. Keep it; don't ask again.
-    const prev = this.clusterBefore(turn);
-    const answered = prev.find((t) => ['show', 'drafted'].includes(this.outcome.get(t.turn) ?? 'none'));
+    const last = this.finals[this.finals.length - 1];
+    const answered =
+      last &&
+      !this.isolated.has(turn) &&
+      ['show', 'drafted'].includes(this.outcome.get(last.turn) ?? 'none') &&
+      (this.turnStart.get(turn) ?? 0) - (this.turnEnd.get(last.turn) ?? 0) <= this.opts.clusterGapMs
+        ? last
+        : undefined;
     if (answered && this.isFragment(text) && this.view.turn === answered.turn && ['confirmed', 'drafted'].includes(this.view.mode)) {
       this.pending.get(turn)?.controller.abort();
       this.pending.delete(turn);
@@ -376,7 +405,7 @@ export class Engine extends EventEmitter {
     const first = await Promise.race([pending.promise, after(this.opts.routerTimeoutMs)]);
     if (first !== SLOW) {
       this.pending.delete(turn);
-      await this.finish(turn, question, first, pending, false);
+      await this.finish(turn, question, text, first, pending, false);
       return;
     }
     // Claude is slow. Show a confident instant match meanwhile (never a "Not in Sheet" flag),
@@ -388,10 +417,10 @@ export class Engine extends EventEmitter {
     this.pending.delete(turn);
     if (late === SLOW) {
       pending.controller.abort();
-      await this.finish(turn, question, null, pending, true, 'no answer after 15 seconds');
+      await this.finish(turn, question, text, null, pending, true, 'no answer after 15 seconds');
       return;
     }
-    await this.finish(turn, question, late, pending, true);
+    await this.finish(turn, question, text, late, pending, true);
   }
 
   /** The current script now also answers `turn` (a later piece of the same question). No re-render. */
@@ -400,7 +429,7 @@ export class Engine extends EventEmitter {
     if (this.lastConfirmed.version === this.view.version) this.lastConfirmed = this.view;
   }
 
-  private async finish(turn: number, question: string, decision: RouteDecision | null, pending: Pending, late: boolean, reason?: string) {
+  private async finish(turn: number, question: string, rawText: string, decision: RouteDecision | null, pending: Pending, late: boolean, reason?: string) {
     if (!decision) {
       const why = reason ?? (pending.error instanceof Error ? pending.error.message : 'no answer');
       this.setStatus({ routerState: 'error', message: `Claude unavailable (${why}); using instant match.` });
@@ -415,8 +444,8 @@ export class Engine extends EventEmitter {
     if (turn < this.latestEnded) return; // a newer question already arrived
     const checked = await this.checked(turn, question, decision);
     if (turn < this.latestEnded) return;
-    if (late) this.applyLate(turn, question, checked);
-    else this.apply(turn, question, checked);
+    if (late) await this.applyLate(turn, question, rawText, checked);
+    else await this.apply(turn, question, rawText, checked);
   }
 
   // ---------------------------------------------------------------- guard rails on Claude's pick
@@ -472,7 +501,7 @@ export class Engine extends EventEmitter {
   }
 
   /** Claude answered after the instant match was already showing for this question. */
-  private applyLate(turn: number, question: string, d: RouteDecision) {
+  private async applyLate(turn: number, question: string, rawText: string, d: RouteDecision) {
     const v = this.view;
     const instantShowing = v.turn === turn && v.mode === 'confirmed' && v.source === 'instant';
     if (instantShowing && this.lastScrollAt > this.viewShownAt) {
@@ -484,10 +513,10 @@ export class Engine extends EventEmitter {
       return;
     }
     if (instantShowing && d.action === 'ignore') return;
-    this.apply(turn, question, d);
+    await this.apply(turn, question, rawText, d);
   }
 
-  private apply(turn: number, question: string, d: RouteDecision) {
+  private async apply(turn: number, question: string, rawText: string, d: RouteDecision) {
     this.log('decision', { turn, question, ...d });
     if (d.suggestedQuestion.trim() && /\?\s*$/.test(d.suggestedQuestion) && wordCount(d.suggestedQuestion) <= 25) {
       if (!this.tray.suggestions.includes(d.suggestedQuestion.trim())) {
@@ -518,10 +547,26 @@ export class Engine extends EventEmitter {
       });
       return;
     }
-    const plain = displayText(this.sheet, d.ids);
-    const bridge = d.bridge ? validateBridge(d.bridge, question, plain) : null;
-    if (d.bridge && !bridge) this.log('bridge-rejected', { bridge: d.bridge });
-    this.showIds(d.ids, {
+    let ids = d.ids;
+    if (['confirmed', 'drafted'].includes(this.view.mode)) {
+      const onScreen = new Set(this.view.pieces);
+      const fresh = ids.filter((id) => !expandIds(this.sheet, [id]).every((p) => onScreen.has(p.piece)));
+      if (fresh.length && fresh.length < ids.length) {
+        // Claude repeated what is already on screen along with something new: show the new part.
+        ids = fresh;
+      } else if (!fresh.length && !this.isolated.has(turn) && Date.now() - this.viewShownAt < 20000) {
+        // The exact same answer again, seconds later (a rephrase or a trailing piece): keep the script and your place.
+        this.outcome.set(turn, 'show');
+        this.adoptTurn(turn, question);
+        this.log('same-script', { turn, pieces: this.view.pieces });
+        return;
+      }
+      // Otherwise it is a new question that happens to get the same answer: show it again from the top.
+    }
+    const plain = displayText(this.sheet, ids);
+    const bridge = d.bridge && ids === d.ids ? validateBridge(d.bridge, question, plain) : null;
+    if (d.bridge && ids === d.ids && !bridge) this.log('bridge-rejected', { bridge: d.bridge });
+    this.showIds(ids, {
       source: 'claude',
       question,
       turn,
@@ -568,20 +613,6 @@ export class Engine extends EventEmitter {
   ) {
     const script = this.render(ids, o.bridge);
     if (!script) return;
-    // The same script is already on screen from an earlier piece of this question: keep it, keep your place.
-    const first = script.blocks[0]?.piece;
-    if (
-      o.source === 'claude' &&
-      this.view.mode === 'confirmed' &&
-      this.view.turn !== o.turn &&
-      this.view.blocks[0]?.piece === first &&
-      this.clusterBefore(o.turn).some((t) => t.turn === this.view.turn)
-    ) {
-      this.outcome.set(o.turn, 'show');
-      this.adoptTurn(o.turn, o.question);
-      this.log('same-script', { turn: o.turn, piece: first });
-      return;
-    }
     for (const id of script.pieces) if (!this.shown.includes(id)) this.shown.push(id);
     this.outcome.set(o.turn, 'show');
     this.setView({
@@ -592,6 +623,7 @@ export class Engine extends EventEmitter {
       blocks: script.blocks,
       closest: [],
       unmetBackrefs: this.unmet(script, true),
+      pieces: script.pieces,
       ...(o.runnerUp ? { runnerUp: o.runnerUp } : {}),
       ...(o.confidence !== undefined ? { confidence: o.confidence } : {}),
       ...(o.latencyMs !== undefined ? { latencyMs: o.latencyMs } : {}),
@@ -637,6 +669,7 @@ export class Engine extends EventEmitter {
       cues: ['Not from your Sheet. Drafted from your materials; dotted words are not in them.'],
       closest: [],
       unmetBackrefs: [],
+      pieces: ['draft'],
       ...(runnerUp ? { runnerUp } : {}),
       ...(latencyMs !== undefined ? { latencyMs } : {}),
       question,
@@ -704,6 +737,7 @@ export class Engine extends EventEmitter {
       blocks: [],
       closest,
       unmetBackrefs: [],
+      pieces: [],
       ...(latencyMs !== undefined ? { latencyMs } : {}),
       question,
       turn,

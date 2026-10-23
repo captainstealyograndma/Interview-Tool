@@ -121,4 +121,4 @@ api.on('level', (rms) => {
 });
 
 void api.getSettings().then((s) => setFont(s.fontSize));
-render({ mode: 'idle', source: 'instant', label: '', cues: [], blocks: [], closest: [], unmetBackrefs: [], question: '', turn: -1, version: 0 });
+render({ mode: 'idle', source: 'instant', label: '', cues: [], blocks: [], closest: [], unmetBackrefs: [], pieces: [], question: '', turn: -1, version: 0 });

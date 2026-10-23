@@ -152,3 +152,64 @@ describe('Guard rails on picks', () => {
     if (first) expect(['followup', 'conditional']).not.toContain(sheet.pieces[first]!.kind);
   });
 });
+
+describe('Every question gets answered, all interview long', () => {
+  const FIRST = 'Yeah. Sure. Tell me about a time when you had several high priority tasks at once with tight deadlines. What was happening, and how did you handle it?';
+  const SECOND =
+    "That's really clear and very relevant. Thanks. What I'd like to understand more is tell me about a time when you made a mistake or missed something. What happened and how did you handle it?";
+
+  it('the exact two-question exchange: interviewer "mm-hmm"s during the answer, then a new question', async () => {
+    const { sheet } = await fixtureSheet();
+    // Claude, like Haiku did, answers the second question with the old answer AND the new story.
+    const router = new FakeRouter((req) => (/mistake/.test(req.question) ? decision({ ids: ['Q1', 'S3'] }) : decision({ ids: ['Q1'] })));
+    const engine = new Engine(sheet, new Matcher(sheet), router);
+    await speak(engine, 0, FIRST);
+    expect(engine.banner.pieces).toEqual(['Q1', 'S1']);
+    for (const [i, filler] of ['Right.', 'Uh-huh.', 'Mhmm.', 'Right.', 'Uh-huh.'].entries()) await speak(engine, i + 1, filler);
+    await speak(engine, 6, SECOND);
+    // Routed on its own, not glued to the first question, with the first question as context.
+    expect(router.calls[1]!.question).toBe(SECOND);
+    expect(router.calls[1]!.recent[0]).toBe(FIRST);
+    // The new story is shown; the old answer is not kept on screen.
+    expect(engine.banner.mode).toBe('confirmed');
+    expect(engine.banner.pieces).toEqual(['S3']);
+    expect(bannerText(engine.banner)).toContain('food drive');
+  });
+
+  it('a second, different question right after the first is never joined to it', async () => {
+    const { sheet } = await fixtureSheet();
+    const router = new FakeRouter((req) => decision({ ids: [/weakness/.test(req.question) ? 'K1' : 'T1'] }));
+    const engine = new Engine(sheet, new Matcher(sheet), router);
+    await speak(engine, 0, "What's your greatest weakness?");
+    await speak(engine, 1, 'Tell me about your grades.');
+    expect(router.calls[1]!.question).toBe('Tell me about your grades.');
+    expect(engine.banner.pieces).toEqual(['T1']);
+  });
+
+  it('five questions in a row each get their own answer', async () => {
+    const { sheet } = await fixtureSheet();
+    const map: Record<string, string> = { weakness: 'K1', grades: 'T1', fun: 'K2', problem: 'Q1', team: 'Q5' };
+    const router = new FakeRouter((req) => decision({ ids: [map[Object.keys(map).find((k) => req.question.includes(k))!]!] }));
+    const engine = new Engine(sheet, new Matcher(sheet), router);
+    const qs = ["What's your greatest weakness?", 'Tell me about your grades.', 'What do you do for fun?', 'Tell me about a hard problem you solved.', 'Tell me about working on a team.'];
+    const seen: string[] = [];
+    for (const [i, q] of qs.entries()) {
+      await speak(engine, i * 2, q);
+      seen.push(engine.banner.pieces[0]!);
+      await speak(engine, i * 2 + 1, 'Mm-hmm.');
+    }
+    expect(seen).toEqual(['K1', 'T1', 'K2', 'Q1', 'Q5']);
+  });
+
+  it('the same answer again seconds later keeps your place; new content always shows', async () => {
+    const { sheet } = await fixtureSheet();
+    const router = new FakeRouter((req) => decision({ ids: /also/.test(req.question) ? ['K1', 'T1'] : ['K1'] }));
+    const engine = new Engine(sheet, new Matcher(sheet), router);
+    await speak(engine, 0, "What's your greatest weakness?");
+    const v = engine.banner;
+    await speak(engine, 1, 'I mean your biggest weakness, the thing you struggle with most.');
+    expect(engine.banner.version).toBe(v.version);
+    await speak(engine, 2, 'And also, tell me about your grades.');
+    expect(engine.banner.pieces).toEqual(['T1']);
+  });
+});
