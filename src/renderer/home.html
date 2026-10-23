@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
-    <title>Interview Banner</title>
+    <title>Interview Banner 2</title>
     <link rel="stylesheet" href="app.css" />
   </head>
   <body>
     <main>
-      <h1>Interview Banner</h1>
-      <p class="sub">Shows your own Sheet, word for word, as the interviewer asks.</p>
+      <h1>Interview Banner 2</h1>
+      <p class="sub">Shows your own Sheet, word for word, as the interviewer asks. When the Sheet has no answer, drafts one from your materials, clearly marked.</p>
 
       <section class="card">
         <h2>1 · Keys</h2>
@@ -27,30 +27,45 @@
       </section>
 
       <section class="card">
-        <h2>2 · Model that picks the script</h2>
+        <h2>2 · Model</h2>
         <div class="row">
-          <label><input type="radio" name="model" value="claude-opus-5-5" /> Claude Opus 5.5 (most accurate)</label>
-          <label><input type="radio" name="model" value="claude-haiku-5-5" /> Claude Haiku 5.5 (fastest)</label>
+          <label><input type="radio" name="model" value="claude-haiku-5-5" /> Claude Haiku 5.5 (fastest, recommended)</label>
+          <label><input type="radio" name="model" value="claude-opus-5-5" /> Claude Opus 5.5 (slower)</label>
         </div>
       </section>
 
       <section class="card">
-        <h2>3 · Your Sheet</h2>
+        <h2>3 · Interview</h2>
         <div class="row">
-          <button id="openSheet">Open Sheet…</button>
+          <select id="profileSelect"></select>
+          <button id="newProfile">New interview…</button>
+          <button id="renameProfile">Rename</button>
+          <button id="deleteProfile">Delete</button>
+        </div>
+        <div id="newProfileRow" class="row" hidden>
+          <input id="newProfileName" type="text" placeholder="Name this interview, e.g. Firm name, role" />
+          <button id="createProfile" class="primary">Create</button>
+          <button id="cancelProfile">Cancel</button>
+        </div>
+
+        <label class="field">Your Sheet (required)</label>
+        <div class="row">
+          <button id="chooseSheet">Choose Sheet…</button>
           <button id="reloadSheet">Reload</button>
           <button id="review" class="primary">Review &amp; approve…</button>
+          <button id="template">Save a blank Sheet template…</button>
         </div>
-        <div id="sheetInfo" class="muted">No Sheet loaded.</div>
-        <div class="row">
-          <button id="phrasings">Improve instant matching (optional)</button>
-          <span id="phrasingsState" class="muted"></span>
-        </div>
+        <div id="sheetInfo" class="muted">No Sheet chosen.</div>
+        <div id="phrasingState" class="muted"></div>
         <div id="sheetMsg" class="msg"></div>
+
+        <label class="field">Your materials (optional)</label>
+        <p class="muted">Used only to ground drafted answers and to help the transcriber with names. Never shown as script.</p>
+        <div id="materials"></div>
       </section>
 
       <section class="card">
-        <h2>4 · Interview</h2>
+        <h2>4 · Listen</h2>
         <div class="row">
           <button id="start" class="primary">Start listening</button>
           <button id="stop">Stop</button>

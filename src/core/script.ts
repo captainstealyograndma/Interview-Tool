@@ -7,8 +7,13 @@ import type { BackRef, Piece, PlanPart, Segment, Sheet } from './types';
 
 export interface Chunk {
   text: string;
-  /** 'space' is a single display space between two slices whose source gap was a note. */
-  kind: 'say' | 'label' | 'bridge' | 'space';
+  /**
+   * 'space' is a single display space between two slices whose source gap was a note.
+   * 'draft' is AI-written text, shown only when the Sheet has no answer, always styled apart.
+   */
+  kind: 'say' | 'label' | 'bridge' | 'space' | 'draft';
+  /** Draft only: a personal claim not found in your materials. Shown with a dotted underline. */
+  unverified?: boolean;
   bold: boolean;
   italic: boolean;
   para?: number;
@@ -132,7 +137,7 @@ function blockChunks(sheet: Sheet, segs: Segment[]): Chunk[] {
 
 export function verifyChunks(sheet: Sheet, chunks: Chunk[]): void {
   for (const c of chunks) {
-    if (c.kind === 'bridge') continue;
+    if (c.kind === 'bridge' || c.kind === 'draft') continue;
     if (c.kind === 'space') {
       if (c.text !== ' ') throw new VerbatimError('Unexpected spacing chunk.');
       continue;

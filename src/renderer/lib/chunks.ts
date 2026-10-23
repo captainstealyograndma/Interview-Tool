@@ -16,6 +16,10 @@ export function renderBlocks(container: HTMLElement, blocks: ScriptBlock[], unme
         s.classList.add('unmet');
         s.title = `Refers to ${labelFor ? labelFor(c.backref) : c.backref}, which hasn't come up yet`;
       }
+      if (c.kind === 'draft' && c.unverified) {
+        s.classList.add('unverified');
+        s.title = 'Not found in your Sheet or materials';
+      }
       span.append(s);
     }
     container.append(span, document.createTextNode(' '));

@@ -1,18 +1,19 @@
 #!/bin/bash
-# Installs (or updates) Interview Banner on a Mac with one command:
+# Installs (or updates) Interview Banner 2 on a Mac with one command:
 #
 #   curl -fsSL https://raw.githubusercontent.com/captainstealyograndma/Interview-Tool/refs/heads/claude/interview-prep-tool-brainstorm-9npr4a/install-mac.sh | bash
 #
 # What it does: downloads the app's code, builds the app, puts
-# "Interview Banner" in your Applications folder, and opens it.
+# "Interview Banner 2" in your Applications folder, and opens it. The original
+# Interview Banner app is not touched.
 # Running it again later updates the app.
 
 set -euo pipefail
 
 REPO="captainstealyograndma/Interview-Tool"
 BRANCH="${INTERVIEW_BANNER_BRANCH:-claude/interview-prep-tool-brainstorm-9npr4a}"
-DEST="${INTERVIEW_BANNER_DIR:-$HOME/InterviewBanner}"
-APP_NAME="Interview Banner.app"
+DEST="${INTERVIEW_BANNER_DIR:-$HOME/InterviewBanner2}"
+APP_NAME="Interview Banner 2.app"
 
 bold() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 fail() {
@@ -56,10 +57,10 @@ if [ -n "${INTERVIEW_BANNER_TEST:-}" ]; then
   exit 0
 fi
 
-bold "Step 4 of 4: Putting Interview Banner in your Applications folder…"
+bold "Step 4 of 4: Putting Interview Banner 2 in your Applications folder…"
 BUILT="$(ls -d release/mac*/"$APP_NAME" 2>/dev/null | head -n 1)"
 [ -n "$BUILT" ] || fail "The app was not built."
-osascript -e 'quit app "Interview Banner"' >/dev/null 2>&1 || true
+osascript -e 'quit app "Interview Banner 2"' >/dev/null 2>&1 || true
 TARGET_DIR="/Applications"
 if ! { rm -rf "$TARGET_DIR/$APP_NAME" && cp -R "$BUILT" "$TARGET_DIR/"; } 2>/dev/null; then
   TARGET_DIR="$HOME/Applications"
@@ -68,5 +69,5 @@ if ! { rm -rf "$TARGET_DIR/$APP_NAME" && cp -R "$BUILT" "$TARGET_DIR/"; } 2>/dev
   cp -R "$BUILT" "$TARGET_DIR/"
 fi
 
-bold "Done! Interview Banner is in $TARGET_DIR. Opening it now…"
+bold "Done! Interview Banner 2 is in $TARGET_DIR. Opening it now…"
 open "$TARGET_DIR/$APP_NAME"

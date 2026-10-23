@@ -12,13 +12,13 @@ const release = new URL('../release/', import.meta.url).pathname;
 const dirs = existsSync(release) ? readdirSync(release).filter((d) => d.startsWith('mac')) : [];
 let signed = 0;
 for (const d of dirs) {
-  const app = join(release, d, 'Interview Banner.app');
+  const app = join(release, d, 'Interview Banner 2.app');
   if (!existsSync(app)) continue;
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' });
   console.log(`Signed ${app}`);
   signed++;
 }
 if (!signed) {
-  console.error('Could not find release/mac*/Interview Banner.app to sign.');
+  console.error('Could not find release/mac*/Interview Banner 2.app to sign.');
   process.exit(1);
 }

@@ -1,9 +1,9 @@
 {
-  "name": "interview-banner",
-  "productName": "Interview Banner",
-  "version": "0.1.0",
+  "name": "interview-banner-2",
+  "productName": "Interview Banner 2",
+  "version": "2.0.0",
   "private": true,
-  "description": "Live interview teleprompter that shows your own prep Sheet, word for word.",
+  "description": "Live interview teleprompter: your prep Sheet word for word, drafted answers when the Sheet has none.",
   "main": "dist/main/main.js",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -14,12 +14,14 @@
     "inspect-sheet": "npm run build && node dist/cli/inspect-sheet.js",
     "benchmark": "npm run build && node dist/cli/benchmark.js",
     "make-fixture": "node scripts/make-fixture.mjs",
-    "app": "open \"release/mac-arm64/Interview Banner.app\" || open \"release/mac/Interview Banner.app\""
+    "app": "open \"release/mac-arm64/Interview Banner 2.app\" || open \"release/mac/Interview Banner 2.app\"",
+    "make-template": "node scripts/make-template.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
     "@xmldom/xmldom": "0.9.12",
     "jszip": "3.10.2",
+    "unpdf": "1.8.1",
     "ws": "8.22.0"
   },
   "devDependencies": {
@@ -34,13 +36,14 @@
     "vitest": "5.0.2"
   },
   "build": {
-    "appId": "com.interviewbanner.app",
-    "productName": "Interview Banner",
+    "appId": "com.interviewbanner.app2",
+    "productName": "Interview Banner 2",
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
+      "templates/**/*",
       "package.json"
     ],
     "mac": {
@@ -48,8 +51,8 @@
       "category": "public.app-category.productivity",
       "identity": null,
       "extendInfo": {
-        "NSAudioCaptureUsageDescription": "Interview Banner listens to the call audio so it can show the matching part of your Sheet.",
-        "NSMicrophoneUsageDescription": "Interview Banner does not use your microphone; macOS may ask while setting up audio capture."
+        "NSAudioCaptureUsageDescription": "Interview Banner 2 listens to the call audio so it can show the matching part of your Sheet.",
+        "NSMicrophoneUsageDescription": "Interview Banner 2 does not use your microphone; macOS may ask while setting up audio capture."
       }
     }
   }

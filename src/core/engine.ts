@@ -4,10 +4,13 @@
 // - When they finish, Claude's pick (piece ids only) is rendered from the Sheet
 //   and locks in. If Claude is slow or unreachable, the instant match is used.
 // - Once you scroll a script, nothing replaces it until the next question.
+// - When the Sheet has no answer and a drafter is available, a drafted answer
+//   streams in, styled apart, with unverified personal claims marked.
 
 import { EventEmitter } from 'node:events';
 import { validateBridge } from './bridge';
 import { displayText } from './catalog';
+import { checkClaims, type Drafter } from './drafter';
 import type { Matcher, MatchResult } from './matcher';
 import type { RouteDecision, Router } from './router';
 import { expandIds, pieceLabel, renderPlan, type Script, type ScriptBlock } from './script';
@@ -22,7 +25,7 @@ export interface TurnEvent {
   text: string;
 }
 
-export type BannerMode = 'idle' | 'provisional' | 'confirmed' | 'not-in-sheet';
+export type BannerMode = 'idle' | 'provisional' | 'confirmed' | 'not-in-sheet' | 'drafted';
 export type BannerSource = 'instant' | 'claude' | 'offline' | 'manual';
 
 export interface BannerView {
@@ -38,9 +41,17 @@ export interface BannerView {
   runnerUp?: { id: string; label: string };
   confidence?: number;
   latencyMs?: number;
+  /** Drafted mode: still streaming. */
+  drafting?: boolean;
   question: string;
   turn: number;
   version: number;
+}
+
+export interface DraftSupport {
+  drafter: Drafter;
+  /** Everything a draft may state as personal fact: materials and Sheet text. Used by the claim check. */
+  knownText: string;
 }
 
 export interface TrayView {
@@ -80,6 +91,8 @@ interface Pending {
   error?: unknown;
 }
 
+const DRAFT_UPDATE_MS = 90;
+
 export class Engine extends EventEmitter {
   private opts: EngineOptions;
   private view: BannerView;
@@ -93,12 +106,15 @@ export class Engine extends EventEmitter {
   private lastScrollAt = 0;
   private viewShownAt = 0;
   private version = 0;
+  private draftController?: AbortController;
+  private draftPromise?: Promise<void>;
 
   constructor(
     private sheet: Sheet,
     private matcher: Matcher,
     private router: Router | null,
     opts: Partial<EngineOptions> = {},
+    private draft: DraftSupport | null = null,
   ) {
     super();
     this.opts = { ...DEFAULTS, ...opts };
@@ -136,7 +152,7 @@ export class Engine extends EventEmitter {
   private setView(v: Omit<BannerView, 'version'>) {
     this.view = { ...v, version: ++this.version };
     this.viewShownAt = Date.now();
-    if (v.mode === 'confirmed' || v.mode === 'not-in-sheet') this.lastConfirmed = this.view;
+    if (v.mode === 'confirmed' || v.mode === 'not-in-sheet' || v.mode === 'drafted') this.lastConfirmed = this.view;
     this.emit('banner', this.view);
   }
 
@@ -194,6 +210,7 @@ export class Engine extends EventEmitter {
     const turn = Math.max(this.latestEnded, this.view.turn) + 1;
     this.handle({ type: 'start', turn, text });
     await this.onFinal(turn, text);
+    await this.draftPromise;
   }
 
   // ---------------------------------------------------------------- partials
@@ -241,6 +258,8 @@ export class Engine extends EventEmitter {
 
   private startRoute(turn: number, text: string): Pending | undefined {
     if (!this.router || isBackchannel(text)) return undefined;
+    // A new question ends any draft still streaming for an older one.
+    if (this.draftController && this.view.turn !== turn) this.draftController.abort();
     const existing = this.pending.get(turn);
     if (existing && existing.text === text) return existing;
     existing?.controller.abort();
@@ -338,7 +357,8 @@ export class Engine extends EventEmitter {
       return;
     }
     if (d.action === 'not_in_sheet' || !d.ids.length) {
-      this.showNotInSheet(turn, question, d.closest, 'claude', d.latencyMs);
+      if (this.draft) this.draftPromise = this.startDraft(turn, question, d.closest, d.latencyMs);
+      else this.showNotInSheet(turn, question, d.closest, 'claude', d.latencyMs);
       return;
     }
     // You already started reading the early guess for this question: keep it, offer Claude's pick as the runner-up.
@@ -417,6 +437,93 @@ export class Engine extends EventEmitter {
       question: o.question,
       turn: o.turn,
     });
+  }
+
+  // ---------------------------------------------------------------- drafted answers
+
+  private plainText(id: string, max: number): string {
+    try {
+      const t = displayText(this.sheet, [id]).replace(/\s+/g, ' ').trim();
+      return t.length > max ? `${t.slice(0, max)}…` : t;
+    } catch {
+      return '';
+    }
+  }
+
+  private draftBlocks(text: string, spans?: { text: string; unverified: boolean }[]): ScriptBlock[] {
+    const chunks = (spans ?? [{ text, unverified: false }]).map((sp) => ({
+      text: sp.text,
+      kind: 'draft' as const,
+      bold: false,
+      italic: false,
+      ...(sp.unverified ? { unverified: true } : {}),
+    }));
+    return [{ piece: 'draft', chunks }];
+  }
+
+  /** The Sheet has no answer: stream a drafted one, with the closest Sheet material one click away. */
+  private async startDraft(turn: number, question: string, closestIds: string[], latencyMs?: number) {
+    const support = this.draft!;
+    this.draftController?.abort();
+    const controller = new AbortController();
+    this.draftController = controller;
+    const closestId = closestIds.find((id) => this.sheet.pieces[id]);
+    const runnerUp = closestId ? { id: closestId, label: pieceLabel(this.sheet, closestId) } : undefined;
+    const base = {
+      mode: 'drafted' as const,
+      source: 'claude' as const,
+      label: 'Drafted',
+      cues: ['Not from your Sheet. Drafted from your materials; dotted words are not in them.'],
+      closest: [],
+      unmetBackrefs: [],
+      ...(runnerUp ? { runnerUp } : {}),
+      ...(latencyMs !== undefined ? { latencyMs } : {}),
+      question,
+      turn,
+    };
+    this.setView({ ...base, blocks: [], drafting: true });
+    this.log('draft-start', { turn, question, closest: closestIds });
+
+    let lastPush = 0;
+    let latest = '';
+    let timer: NodeJS.Timeout | undefined;
+    const push = () => {
+      if (controller.signal.aborted || this.view.turn !== turn || this.view.mode !== 'drafted') return;
+      lastPush = Date.now();
+      this.setView({ ...base, blocks: this.draftBlocks(latest), drafting: true });
+    };
+    const req = {
+      question,
+      recent: this.turns.slice(-7, -1),
+      said: this.shown.slice(-8).map((id) => this.plainText(id, 400)).filter(Boolean),
+      closest: closestIds.slice(0, 2).map((id) => ({ label: pieceLabel(this.sheet, id), text: this.plainText(id, 600) })).filter((c) => c.text),
+    };
+    try {
+      const final = await support.drafter.draft(
+        req,
+        (textSoFar) => {
+          latest = textSoFar;
+          const wait = DRAFT_UPDATE_MS - (Date.now() - lastPush);
+          if (wait <= 0) push();
+          else if (!timer) timer = setTimeout(() => ((timer = undefined), push()), wait);
+        },
+        controller.signal,
+      );
+      if (timer) clearTimeout(timer);
+      if (controller.signal.aborted || this.view.turn !== turn) return;
+      const known = [support.knownText, question, ...req.recent, ...req.said].join('\n');
+      const spans = checkClaims(final, known);
+      this.setView({ ...base, blocks: this.draftBlocks(final, spans), drafting: false });
+      this.log('draft-done', { turn, words: wordCount(final), unverified: spans.filter((x) => x.unverified).map((x) => x.text) });
+    } catch (e) {
+      if (timer) clearTimeout(timer);
+      if (controller.signal.aborted || this.view.turn !== turn) return;
+      this.log('draft-failed', { turn, error: String((e as Error).message ?? e) });
+      this.setStatus({ message: `Couldn't draft an answer (${(e as Error).message ?? e}); showing the closest Sheet material.` });
+      this.showNotInSheet(turn, question, closestIds, 'claude', latencyMs);
+    } finally {
+      if (this.draftController === controller) this.draftController = undefined;
+    }
   }
 
   private showNotInSheet(turn: number, question: string, closestIds: string[], source: BannerSource, latencyMs?: number) {

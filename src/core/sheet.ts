@@ -542,7 +542,7 @@ class Builder {
     }
     const text = p.text;
     const from = lead ? lead.end : 0;
-    const openMatch = /open with:\s*"/i.exec(text.slice(from));
+    const openMatch = /open with:\s*["\u201c]/i.exec(text.slice(from));
     const fullMatch = /full answer:\s*/i.exec(text.slice(from));
     if (fullMatch) {
       const labelStart = from + fullMatch.index;
@@ -558,7 +558,9 @@ class Builder {
     let instrStart = from;
     if (openMatch) {
       const quoteOpen = from + openMatch.index + openMatch[0].length;
-      const quoteClose = text.indexOf('"', quoteOpen);
+      const closeRe = /["\u201d]/g;
+      closeRe.lastIndex = quoteOpen;
+      const quoteClose = closeRe.exec(text)?.index ?? -1;
       const end = quoteClose === -1 ? text.length : quoteClose;
       const pre = seg(p, from, quoteOpen, 'note');
       if (pre) block.segments.push(pre);

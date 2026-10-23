@@ -53,7 +53,7 @@ How to choose, following the Sheet's own guidance first:
 
 "runner_up": the second-best id to show, or "".
 
-"bridge": almost always "". Only when the first piece you return would sound like a non-sequitur as a direct reply to the exact question (typically a story chosen directly because no opening line covers the question), write a lead-in of at most 15 words that flows into it. Use only words from the interviewer's question, words from the chosen text, and plain connecting words. Never add facts, names, numbers, opinions or claims. If unsure, return "".
+"bridge": usually "". Write a lead-in only when the first words of what you return would not flow as a direct reply to the exact question as asked. That happens when a story is chosen directly because no opening line covers the question, and also for Core, Classic or Tough answers when the interviewer's wording differs from the Sheet's question (for example, the Sheet says "How would a supervisor describe you?" and they asked "How would your co-counsel describe you?"). The lead-in is at most 15 words, flows into the first sentence of the chosen text, and uses only words from the interviewer's question, words from the chosen text, and plain connecting words. Never add facts, names, numbers, opinions or claims. If the chosen text already answers the question directly, return "".
 
 "suggested_question": almost always "". Only when the interviewer just shared something specific about the team, the role, the work or the firm, suggest one short, natural question the candidate could ask later about that specific thing. Otherwise "".`;
 
@@ -183,7 +183,7 @@ export async function generatePhrasings(
   const catalog = renderCatalog(sheet);
   const targets = sheet.order.filter((id) => !['ask'].includes(sheet.pieces[id]!.kind));
   const batches: string[][] = [];
-  for (let i = 0; i < targets.length; i += 30) batches.push(targets.slice(i, i + 30));
+  for (let i = 0; i < targets.length; i += 15) batches.push(targets.slice(i, i + 15));
   let done = 0;
   const results = await Promise.all(
     batches.map(async (batch) => {
@@ -194,7 +194,7 @@ export async function generatePhrasings(
         messages: [
           {
             role: 'user',
-            content: `For each of these piece ids, write 4 different, natural ways a live interviewer might ask for that piece (vary wording; include short spoken forms). These are used only to recognize questions, never shown. Ids: ${batch.join(', ')}`,
+            content: `For each of these piece ids, write 12 different, natural ways a live interviewer might ask for that piece. Vary the wording widely: formal and casual, long and short, "tell me about a time" forms and direct forms, and paraphrases of the piece's "answers:" tags and story themes. Include phrasings that share no key words with the title. These are used only to recognize questions, never shown. Ids: ${batch.join(', ')}`,
           },
         ],
         output_config: {
@@ -228,6 +228,6 @@ export async function generatePhrasings(
     }),
   );
   const out: Record<string, string[]> = {};
-  for (const item of results.flat()) if (sheet.pieces[item.id]) out[item.id] = item.phrasings.slice(0, 6);
+  for (const item of results.flat()) if (sheet.pieces[item.id]) out[item.id] = item.phrasings.slice(0, 14);
   return out;
 }

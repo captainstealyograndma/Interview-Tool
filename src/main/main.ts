@@ -1,18 +1,24 @@
-// Electron main process: windows, IPC, and the live session.
+// Electron main process for Interview Banner 2: windows, IPC, profiles and the live session.
 
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session as electronSession, shell } from 'electron';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, safeStorage, screen, session as electronSession, shell } from 'electron';
+import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+import { renderCatalog } from '../core/catalog';
+import { ClaudeDrafter } from '../core/drafter';
 import { Engine } from '../core/engine';
 import { Matcher } from '../core/matcher';
+import { loadMaterial, materialKeyterms, materialsBlock, MATERIAL_LABEL, type MaterialKind, type Materials } from '../core/materials';
 import { applySavedPairings, buildReview, editPairing } from '../core/review';
 import { ClaudeRouter, generatePhrasings } from '../core/router';
 import { loadSheet } from '../core/sheet';
 import { FluxTranscriber } from '../core/stt/deepgram';
 import type { Sheet } from '../core/types';
 import { verifySheet, type VerbatimReport } from '../core/verbatim';
-import type { SessionState, Settings, SheetSummary } from '../shared/ipc';
-import { Store } from './store';
+import type { MaterialStatus, ProfileView, SessionState, Settings, SheetSummary } from '../shared/ipc';
+import { fileStamp, Store, type Profile } from './store';
+
+const APP_NAME = 'Interview Banner 2';
+const V1_APP_NAME = 'Interview Banner';
 
 let store: Store;
 let home: BrowserWindow | null = null;
@@ -20,9 +26,13 @@ let review: BrowserWindow | null = null;
 let banner: BrowserWindow | null = null;
 let tray: BrowserWindow | null = null;
 
-let sheetPath: string | undefined;
+// Active profile's loaded state
 let sheet: Sheet | undefined;
 let report: VerbatimReport | undefined;
+let sheetError: string | undefined;
+let materials: Materials = {};
+let materialErrors: Partial<Record<MaterialKind, string>> = {};
+let phrasingStatus: string | undefined;
 
 let engine: Engine | undefined;
 let flux: FluxTranscriber | undefined;
@@ -39,25 +49,22 @@ function broadcast(channel: string, data: unknown) {
   for (const w of [home, review, banner, tray]) if (w && !w.isDestroyed()) w.webContents.send(channel, data);
 }
 
-// ---------------------------------------------------------------- settings / sheet
+// ---------------------------------------------------------------- settings
 
 function settings(): Settings {
   const s = store.settings;
-  return {
-    model: s.model,
-    fontSize: s.fontSize,
-    hasAnthropicKey: !!store.getKey('anthropicKey'),
-    hasDeepgramKey: !!store.getKey('deepgramKey'),
-    ...(s.lastSheetPath ? { lastSheetPath: s.lastSheetPath } : {}),
-  };
+  return { model: s.model, fontSize: s.fontSize, hasAnthropicKey: !!store.getKey('anthropicKey'), hasDeepgramKey: !!store.getKey('deepgramKey') };
 }
 
+// ---------------------------------------------------------------- profile: sheet + materials
+
 function summary(): SheetSummary | null {
-  if (!sheet || !sheetPath || !report) return null;
+  const profile = store.activeProfile;
+  if (!sheet || !profile?.sheetPath || !report) return null;
   const r = store.review(sheet.hash);
   const pieces = Object.values(sheet.pieces);
   return {
-    path: sheetPath,
+    path: profile.sheetPath,
     title: sheet.title,
     hash: sheet.hash,
     pieces: pieces.length,
@@ -71,20 +78,118 @@ function summary(): SheetSummary | null {
   };
 }
 
-async function load(path: string): Promise<SheetSummary | null> {
-  const { sheet: s, documentXml } = await loadSheet(readFileSync(path));
-  report = verifySheet(s, documentXml);
-  applySavedPairings(s, store.review(s.hash).pairings);
-  sheet = s;
-  sheetPath = path;
-  store.update({ lastSheetPath: path });
-  return summary();
+function materialStatuses(profile: Profile | undefined): MaterialStatus[] {
+  return (['resume', 'cover', 'posting'] as MaterialKind[]).map((kind) => {
+    const path = profile?.[`${kind}Path` as const];
+    const m = materials[kind];
+    return {
+      kind,
+      ...(path ? { path, fileName: basename(path) } : {}),
+      ...(m ? { words: m.words } : {}),
+      ...(materialErrors[kind] ? { error: materialErrors[kind] } : {}),
+    };
+  });
+}
+
+function profileView(): ProfileView {
+  const active = store.activeProfile;
+  return {
+    profiles: store.profiles.map((p) => ({ id: p.id, name: p.name, active: p.id === active?.id })),
+    ...(active ? { active: { id: active.id, name: active.name, active: true } } : {}),
+    sheet: summary(),
+    ...(sheetError ? { sheetError } : {}),
+    materials: materialStatuses(active),
+    ...(phrasingStatus ? { phrasingStatus } : {}),
+  };
+}
+
+function pushProfile() {
+  broadcast('profile', profileView());
+}
+
+async function loadActiveSheet(): Promise<void> {
+  sheet = undefined;
+  report = undefined;
+  sheetError = undefined;
+  const path = store.activeProfile?.sheetPath;
+  if (!path) return;
+  try {
+    const { sheet: s, documentXml } = await loadSheet(readFileSync(path));
+    report = verifySheet(s, documentXml);
+    applySavedPairings(s, store.review(s.hash).pairings);
+    sheet = s;
+  } catch (e) {
+    sheetError = existsSync(path) ? `Could not read the Sheet: ${(e as Error).message}` : `The Sheet file is missing: ${path}`;
+  }
+}
+
+async function loadActiveMaterials(): Promise<void> {
+  materials = {};
+  materialErrors = {};
+  const profile = store.activeProfile;
+  if (!profile) return;
+  const cache = store.materialsCache(profile.id);
+  let changed = false;
+  for (const kind of ['resume', 'cover', 'posting'] as MaterialKind[]) {
+    const path = profile[`${kind}Path` as const];
+    if (!path) continue;
+    const stamp = fileStamp(path);
+    const cached = cache.materials[kind];
+    if (cached && cached.path === path && cache.stamps[path] === stamp) {
+      materials[kind] = cached;
+      continue;
+    }
+    try {
+      materials[kind] = await loadMaterial(kind, path, readFileSync(path));
+      cache.materials[kind] = materials[kind];
+      cache.stamps[path] = stamp;
+      changed = true;
+    } catch (e) {
+      materialErrors[kind] = existsSync(path) ? (e as Error).message : 'File is missing';
+    }
+  }
+  for (const kind of Object.keys(cache.materials) as MaterialKind[]) {
+    if (!profile[`${kind}Path` as const]) {
+      delete cache.materials[kind];
+      changed = true;
+    }
+  }
+  if (changed) store.saveMaterialsCache(profile.id, cache);
+}
+
+async function activateProfile(): Promise<ProfileView> {
+  stopSession();
+  await loadActiveSheet();
+  await loadActiveMaterials();
+  pushProfile();
+  return profileView();
+}
+
+// ---------------------------------------------------------------- phrasings (automatic at approval)
+
+async function runPhrasings(hash: string): Promise<void> {
+  const apiKey = store.getKey('anthropicKey');
+  if (!sheet || !apiKey || sheet.hash !== hash) return;
+  const s = sheet;
+  phrasingStatus = 'Learning question phrasings…';
+  pushProfile();
+  try {
+    const phrasings = await generatePhrasings(s, { apiKey, model: store.settings.model }, (done, total) => {
+      phrasingStatus = `Learning question phrasings… ${done}/${total}`;
+      pushProfile();
+    });
+    store.saveReview(hash, { ...store.review(hash), phrasings });
+    phrasingStatus = undefined;
+  } catch (e) {
+    phrasingStatus = `Couldn't learn phrasings (${(e as Error).message}). The Sheet still works; approve again to retry.`;
+  }
+  pushProfile();
 }
 
 // ---------------------------------------------------------------- windows
 
 function createHome() {
-  home = new BrowserWindow({ width: 980, height: 820, title: 'Interview Banner', webPreferences: webPrefs() });
+  home = new BrowserWindow({ width: 1000, height: 900, title: APP_NAME, webPreferences: webPrefs() });
   home.loadFile(renderer('home.html'));
   home.on('closed', () => {
     home = null;
@@ -101,7 +206,6 @@ function openReview() {
 }
 
 function bannerHeight(fontSize: number) {
-  // label line + 3 lines of text + progress bar + padding
   return Math.round(30 + fontSize * 1.35 * 3 + 6 + 12);
 }
 
@@ -125,7 +229,7 @@ function openBanner() {
     alwaysOnTop: true,
     hasShadow: true,
     skipTaskbar: true,
-    title: 'Interview Banner',
+    title: APP_NAME,
     webPreferences: webPrefs(),
   });
   banner.setAlwaysOnTop(true, 'screen-saver');
@@ -174,7 +278,7 @@ function setSession(patch: Partial<SessionState>) {
 }
 
 async function startSession(): Promise<SessionState> {
-  if (!sheet) return { ...sessionState, message: 'Load your Sheet first.' };
+  if (!sheet) return { ...sessionState, message: sheetError ?? 'Choose your Sheet first.' };
   if (!report?.ok) return { ...sessionState, message: 'This Sheet failed the word-for-word check; it cannot be used.' };
   if (!store.review(sheet.hash).approved) return { ...sessionState, message: 'Review and approve your Sheet first.' };
   stopSession();
@@ -182,11 +286,13 @@ async function startSession(): Promise<SessionState> {
   const reviewState = store.review(sheet.hash);
   const anthropicKey = store.getKey('anthropicKey');
   const deepgramKey = store.getKey('deepgramKey');
-  const router = anthropicKey ? new ClaudeRouter(sheet, { apiKey: anthropicKey, model: store.settings.model }) : null;
-  engine = new Engine(sheet, new Matcher(sheet, reviewState.phrasings ?? {}), router);
+  const model = store.settings.model;
+  const router = anthropicKey ? new ClaudeRouter(sheet, { apiKey: anthropicKey, model }) : null;
+  const drafter = anthropicKey ? new ClaudeDrafter(sheet, materials, { apiKey: anthropicKey, model }) : null;
+  const knownText = [renderCatalog(sheet), materialsBlock(materials)].join('\n');
+  engine = new Engine(sheet, new Matcher(sheet, reviewState.phrasings ?? {}), router, {}, drafter ? { drafter, knownText } : null);
   engine.on('banner', (v) => {
     broadcast('banner', v);
-    // A hidden banner comes back for the next question.
     if (v.mode !== 'idle' && banner && !banner.isDestroyed() && !banner.isVisible()) banner.showInactive();
   });
   engine.on('tray', (v) => broadcast('tray', v));
@@ -202,23 +308,19 @@ async function startSession(): Promise<SessionState> {
     broadcast('settings', settings());
   }, 400);
 
-  if (router) {
-    router.warm().catch((e) => broadcast('status', { ...engine?.statusView, routerState: 'error', message: `Claude: ${String(e.message ?? e)}` }));
-  }
+  if (router) router.warm().catch((e) => broadcast('status', { ...engine?.statusView, routerState: 'error', message: `Claude: ${String(e.message ?? e)}` }));
+  if (drafter) drafter.warm().catch(() => undefined);
 
   if (deepgramKey) {
-    flux = new FluxTranscriber({ apiKey: deepgramKey, keyterms: sheet.keyterms });
+    const keyterms = [...sheet.keyterms, ...materialKeyterms(materials)].filter((t, i, a) => a.indexOf(t) === i).slice(0, 40);
+    flux = new FluxTranscriber({ apiKey: deepgramKey, keyterms });
     flux.on('turn', (ev) => engine?.handle(ev));
     flux.on('open', () => setSession({ listening: true, message: undefined }));
     flux.on('close', () => setSession({ listening: false }));
     flux.on('error', (e: Error) => setSession({ message: e.message }));
     flux.start();
   }
-  setSession({
-    running: true,
-    listening: false,
-    message: deepgramKey ? undefined : 'No Deepgram key: listening is off. Test mode still works.',
-  });
+  setSession({ running: true, listening: false, message: deepgramKey ? undefined : 'No Deepgram key: listening is off. Test mode still works.' });
   return sessionState;
 }
 
@@ -234,6 +336,11 @@ function stopSession(): SessionState {
 
 // ---------------------------------------------------------------- IPC
 
+async function pickFile(title: string, filters: Electron.FileFilter[]): Promise<string | undefined> {
+  const res = await dialog.showOpenDialog(home!, { title, properties: ['openFile'], filters });
+  return res.canceled ? undefined : res.filePaths[0];
+}
+
 function registerIpc() {
   ipcMain.handle('settings:get', () => settings());
   ipcMain.handle('settings:set', (_e, patch: Partial<Pick<Settings, 'model' | 'fontSize'>>) => {
@@ -241,10 +348,7 @@ function registerIpc() {
     if (patch.model === 'claude-opus-5-5' || patch.model === 'claude-haiku-5-5') clean.model = patch.model;
     if (typeof patch.fontSize === 'number') clean.fontSize = Math.max(16, Math.min(56, Math.round(patch.fontSize)));
     store.update(clean);
-    if (clean.fontSize && banner && !banner.isDestroyed()) {
-      const b = banner.getBounds();
-      banner.setBounds({ ...b, height: bannerHeight(clean.fontSize) });
-    }
+    if (clean.fontSize && banner && !banner.isDestroyed()) banner.setBounds({ ...banner.getBounds(), height: bannerHeight(clean.fontSize) });
     broadcast('settings', settings());
     return settings();
   });
@@ -253,13 +357,63 @@ function registerIpc() {
     if (keys.deepgram !== undefined) store.setKey('deepgramKey', keys.deepgram);
     return settings();
   });
-  ipcMain.handle('sheet:open', async () => {
-    const res = await dialog.showOpenDialog(home!, { properties: ['openFile'], filters: [{ name: 'Word document', extensions: ['docx'] }] });
-    if (res.canceled || !res.filePaths[0]) return summary();
-    return load(res.filePaths[0]);
+
+  ipcMain.handle('profile:get', () => profileView());
+  ipcMain.handle('profile:create', async (_e, name: string) => {
+    store.createProfile(String(name));
+    return activateProfile();
   });
-  ipcMain.handle('sheet:reload', async () => (sheetPath ? load(sheetPath) : summary()));
-  ipcMain.handle('sheet:summary', () => summary());
+  ipcMain.handle('profile:rename', (_e, name: string) => {
+    const p = store.activeProfile;
+    if (p && String(name).trim()) store.updateProfile(p.id, { name: String(name).trim() });
+    pushProfile();
+    return profileView();
+  });
+  ipcMain.handle('profile:delete', async () => {
+    const p = store.activeProfile;
+    if (p) store.deleteProfile(p.id);
+    return activateProfile();
+  });
+  ipcMain.handle('profile:select', async (_e, id: string) => {
+    store.selectProfile(String(id));
+    return activateProfile();
+  });
+  ipcMain.handle('sheet:choose', async () => {
+    const p = store.activeProfile ?? store.createProfile('My interview');
+    const path = await pickFile('Choose your Sheet', [{ name: 'Word document', extensions: ['docx'] }]);
+    if (!path) return profileView();
+    store.updateProfile(p.id, { sheetPath: path });
+    if (p.name === 'My interview' || p.name === 'New interview') store.updateProfile(p.id, { name: basename(path).replace(/\.docx$/i, '') });
+    return activateProfile();
+  });
+  ipcMain.handle('sheet:reload', () => activateProfile());
+  ipcMain.handle('material:choose', async (_e, kind: MaterialKind) => {
+    const p = store.activeProfile;
+    if (!p || !MATERIAL_LABEL[kind]) return profileView();
+    const path = await pickFile(`Choose your ${MATERIAL_LABEL[kind].toLowerCase()}`, [{ name: 'Word, PDF or text', extensions: ['docx', 'pdf', 'txt', 'md'] }]);
+    if (!path) return profileView();
+    store.updateProfile(p.id, { [`${kind}Path`]: path });
+    await loadActiveMaterials();
+    pushProfile();
+    return profileView();
+  });
+  ipcMain.handle('material:clear', async (_e, kind: MaterialKind) => {
+    const p = store.activeProfile;
+    if (!p || !MATERIAL_LABEL[kind]) return profileView();
+    store.updateProfile(p.id, { [`${kind}Path`]: undefined });
+    await loadActiveMaterials();
+    pushProfile();
+    return profileView();
+  });
+  ipcMain.handle('template:save', async () => {
+    const src = join(app.getAppPath(), 'templates', 'Interview Prep Sheet Template.docx');
+    if (!existsSync(src)) throw new Error('The template is missing from this installation.');
+    const res = await dialog.showSaveDialog(home!, { title: 'Save a blank Sheet template', defaultPath: join(app.getPath('documents'), 'Interview Prep Sheet Template.docx') });
+    if (res.canceled || !res.filePath) return null;
+    copyFileSync(src, res.filePath);
+    return res.filePath;
+  });
+
   ipcMain.handle('review:open', () => openReview());
   ipcMain.handle('review:get', () => {
     const s = summary();
@@ -273,26 +427,18 @@ function registerIpc() {
     if (blocks === null) delete pairings[finder];
     else pairings[finder] = sheet.pairings[finder]!;
     store.saveReview(sheet.hash, { ...r, pairings, approved: false });
-    const s = summary()!;
-    broadcast('sheet', s);
-    return buildReview(sheet, s);
+    pushProfile();
+    return buildReview(sheet, summary()!);
   });
   ipcMain.handle('review:approve', () => {
     if (!sheet || !report?.ok) return summary();
-    store.saveReview(sheet.hash, { ...store.review(sheet.hash), approved: true });
-    broadcast('sheet', summary());
+    const r = store.review(sheet.hash);
+    store.saveReview(sheet.hash, { ...r, approved: true });
+    pushProfile();
+    if (!r.phrasings || !Object.keys(r.phrasings).length) void runPhrasings(sheet.hash);
     return summary();
   });
-  ipcMain.handle('phrasings:generate', async () => {
-    if (!sheet) return summary();
-    const apiKey = store.getKey('anthropicKey');
-    if (!apiKey) throw new Error('Add your Anthropic API key first.');
-    const phrasings = await generatePhrasings(sheet, { apiKey, model: store.settings.model }, (done, total) =>
-      broadcast('progress', { done, total }),
-    );
-    store.saveReview(sheet.hash, { ...store.review(sheet.hash), phrasings });
-    return summary();
-  });
+
   ipcMain.handle('session:start', () => startSession());
   ipcMain.handle('session:stop', () => stopSession());
   ipcMain.handle('session:simulate', async (_e, text: string) => {
@@ -312,8 +458,17 @@ function registerIpc() {
 
 // ---------------------------------------------------------------- app
 
+// Keep this app's data apart from the original Interview Banner.
+app.setName(APP_NAME);
+app.setPath('userData', join(dirname(app.getPath('userData')), APP_NAME));
+
 app.whenReady().then(async () => {
-  store = new Store();
+  store = new Store(app.getPath('userData'), {
+    available: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (s) => safeStorage.encryptString(s).toString('base64'),
+    decrypt: (s) => safeStorage.decryptString(Buffer.from(s, 'base64')),
+  });
+  store.importFromV1(join(dirname(app.getPath('userData')), V1_APP_NAME));
   registerIpc();
 
   // System audio (the call) via Core Audio tap. The video track is required by the API and ignored.
@@ -327,7 +482,6 @@ app.whenReady().then(async () => {
     { useSystemPicker: false },
   );
 
-  // Links in the app open in the browser, never inside the app.
   app.on('web-contents-created', (_e, contents) => {
     contents.setWindowOpenHandler(({ url }) => {
       void shell.openExternal(url);
@@ -336,13 +490,8 @@ app.whenReady().then(async () => {
     contents.on('will-navigate', (e) => e.preventDefault());
   });
 
-  if (store.settings.lastSheetPath) {
-    try {
-      await load(store.settings.lastSheetPath);
-    } catch {
-      /* file moved; the user can open it again */
-    }
-  }
+  await loadActiveSheet();
+  await loadActiveMaterials();
   createHome();
 });
 

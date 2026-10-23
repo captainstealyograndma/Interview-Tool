@@ -307,3 +307,23 @@ nav.tabs button.active {
 .pill:empty {
   display: none;
 }
+
+.mat-label {
+  display: inline-block;
+  min-width: 96px;
+  font-weight: 600;
+}
+
+select {
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  min-width: 260px;
+}
+
+[hidden] {
+  display: none !important;
+}

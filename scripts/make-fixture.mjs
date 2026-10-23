@@ -79,6 +79,8 @@ const children = [
   finder(B('What motivates you.'), ' Full answer: Honestly, I like finishing things that other people gave up on.'),
   finder(B('Receiving feedback.'), ' Open with: "A manager once told me my drafts were too long." Then tell it the way it\'s written under Weakness.'),
   finder(B('Working on a team.'), ' Open with: "The best example is a scheduling fight between two teams." Then Story 2. If they want a second example, use Story 1.'),
+  // Word's automatic curly quotes must work too.
+  finder(B('Noticing what others missed.'), ' Open with: \u201cI once found a gap nobody else had noticed.\u201d Then Story 1.'),
 
   H2('Resume walkthrough'),
   P('Anything on your resume is fair game.'),

@@ -37,7 +37,7 @@ describe('Sheet loader (fictional fixture)', () => {
       'cheat-sheet',
     ]);
     expect(Object.values(sheet.pieces).filter((p) => p.kind === 'story').map((p) => p.id)).toEqual(['S1', 'S2', 'S3']);
-    expect(Object.values(sheet.pieces).filter((p) => p.kind === 'finder')).toHaveLength(5);
+    expect(Object.values(sheet.pieces).filter((p) => p.kind === 'finder')).toHaveLength(6);
   });
 
   it('keeps story labels and every spoken sentence, including ones starting with "Then"', async () => {
@@ -83,6 +83,9 @@ describe('Sheet loader (fictional fixture)', () => {
     // "the way it's written under Weakness"
     expect(sheet.pairings.Q4!.parts[1]).toEqual({ piece: 'K1' });
     expect(sheet.pieces.Q5!.links.map((l) => `${l.rel}:${l.target}`)).toEqual(['primary:S2', 'alternative:S1']);
+    // Curly quotes (Word's default) are recognized like straight ones.
+    expect(segmentText(sheet, sheet.pieces.Q6!.opener!)).toBe('I once found a gap nobody else had noticed.');
+    expect(sheet.pairings.Q6!.parts).toEqual([{ piece: 'Q6', opener: true }, { piece: 'S1' }]);
   });
 
   it('resolves see/more pointers and the cheat sheet', async () => {

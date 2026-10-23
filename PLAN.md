@@ -188,3 +188,20 @@ Steps 1–2 and most of step 3 can be built and tested in the cloud. Steps 4–5
 | 4. Listening | Written: system-audio capture through the Core Audio tap and Deepgram Flux streaming. The Deepgram client is tested against a local stand-in server. Real capture needs a Mac. |
 | 5. Final tuning | After your first Teams dry run. |
 
+## 10. Interview Banner 2
+
+A separate app (own name, icon, settings folder and install command). The original app is untouched. Decided after the first mock interview.
+
+**Kept as is:** speed design, question generation, layout and font, scrolling, the "never discard a slow Claude answer" rule, word-for-word Sheet text.
+
+**Added**
+- **Interview profiles.** One per interview: Sheet (required) plus optional resume, cover letter and job posting (Word, PDF or text). Keys and settings are shared. On first run, the original app's Sheet, font size and approvals are carried over; keys cannot be (macOS keeps each app's encrypted keys separate).
+- **Drafted answers.** When the Sheet has no answer, Claude drafts one, streamed word by word, shown in amber with a DRAFTED label and the Sheet's closest material one click away. Personal facts may come only from the materials and from what has already come up; subject-matter content may use general knowledge at the Sheet's level. After the draft finishes, names, numbers and claims not found in the materials get a dotted red underline. The Sheet always wins when it has an answer. If drafting fails, the old "Not in Sheet" flag appears.
+- **Lead-ins for all answer kinds**, under the same limits as before.
+- **Automatic phrasing learning** when a Sheet is approved: about 12 alternative wordings per item, used only for the on-device matcher.
+- **Curly quotes** in "Open with:" lines are recognized.
+- **A blank Sheet template** for future interviews.
+- **Default model Claude Haiku 5.5** (fastest).
+
+**Declined:** facts list, "what changed" health check, local meaning-based matcher, capturing your own microphone.
+

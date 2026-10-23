@@ -1,4 +1,4 @@
-import type { Api, SessionState, Settings, SheetSummary, StatusView } from '../shared/ipc';
+import type { Api, MaterialKind, ProfileView, SessionState, Settings, SheetSummary, StatusView } from '../shared/ipc';
 
 declare global {
   interface Window {
@@ -10,8 +10,10 @@ const api = window.api;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 let settings: Settings;
-let summary: SheetSummary | null = null;
+let profile: ProfileView = { profiles: [], sheet: null, materials: [] };
 let session: SessionState = { running: false, listening: false };
+
+const MATERIAL_LABELS: Record<MaterialKind, string> = { resume: 'Resume', cover: 'Cover letter', posting: 'Job posting' };
 
 // ---------------------------------------------------------------- settings & keys
 
@@ -39,65 +41,125 @@ for (const r of document.querySelectorAll<HTMLInputElement>('input[name=model]')
   r.addEventListener('change', async () => renderSettings(await api.setSettings({ model: r.value as Settings['model'] })));
 }
 
-// ---------------------------------------------------------------- sheet
+// ---------------------------------------------------------------- profile: sheet + materials
 
-function renderSummary(s: SheetSummary | null) {
-  summary = s;
-  const info = $('sheetInfo');
-  info.replaceChildren();
-  if (!s) {
-    info.textContent = 'No Sheet loaded.';
-    return;
-  }
-  const title = document.createElement('div');
-  title.innerHTML = '';
-  const b = document.createElement('b');
-  b.textContent = s.title;
-  title.append(b);
-  const check = document.createElement('span');
-  check.className = `pill ${s.verified ? 'ok' : 'bad'}`;
-  check.textContent = s.verified ? 'word-for-word check passed' : 'word-for-word check FAILED';
-  const approved = document.createElement('span');
-  approved.className = `pill ${s.approved ? 'ok' : 'warn'}`;
-  approved.textContent = s.approved ? 'approved' : 'needs review';
-  const counts = document.createElement('div');
-  counts.textContent = `${s.pieces} pieces · ${s.stories} stories · ${s.finder} Question Finder entries`;
-  const row = document.createElement('div');
-  row.className = 'row';
-  row.append(check, approved);
-  info.append(title, row, counts);
-  for (const p of [...s.problems, ...s.warnings]) {
-    const d = document.createElement('div');
-    d.className = 'msg';
-    d.textContent = p;
-    info.append(d);
-  }
-  $('phrasingsState').textContent = s.phrasings ? `${s.phrasings} pieces have extra phrasings` : '';
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
 }
 
-$('openSheet').addEventListener('click', async () => {
+function renderSheet(s: SheetSummary | null, error?: string) {
+  const info = $('sheetInfo');
+  info.replaceChildren();
+  if (error) {
+    info.append(el('div', 'msg', error));
+    return;
+  }
+  if (!s) {
+    info.textContent = 'No Sheet chosen.';
+    return;
+  }
+  const title = el('div');
+  title.append(el('b', '', s.title));
+  const row = el('div', 'row');
+  row.append(
+    el('span', `pill ${s.verified ? 'ok' : 'bad'}`, s.verified ? 'word-for-word check passed' : 'word-for-word check FAILED'),
+    el('span', `pill ${s.approved ? 'ok' : 'warn'}`, s.approved ? 'approved' : 'needs review'),
+  );
+  info.append(title, row, el('div', '', `${s.pieces} pieces · ${s.stories} stories · ${s.finder} Question Finder entries`));
+  for (const p of [...s.problems, ...s.warnings]) info.append(el('div', 'msg', p));
+}
+
+function renderMaterials(v: ProfileView) {
+  const box = $('materials');
+  box.replaceChildren();
+  for (const m of v.materials) {
+    const row = el('div', 'row');
+    const label = el('span', 'mat-label', MATERIAL_LABELS[m.kind]);
+    const status = el('span', m.error ? 'msg' : 'muted', m.error ? `${m.fileName ?? ''}: ${m.error}` : m.fileName ? `${m.fileName} · ${m.words ?? 0} words` : 'none');
+    const choose = el('button', '', m.path ? 'Change…' : 'Choose…');
+    choose.addEventListener('click', async () => renderProfile(await api.chooseMaterial(m.kind)));
+    row.append(label, status, choose);
+    if (m.path) {
+      const clear = el('button', '', 'Remove');
+      clear.addEventListener('click', async () => renderProfile(await api.clearMaterial(m.kind)));
+      row.append(clear);
+    }
+    box.append(row);
+  }
+}
+
+function renderProfile(v: ProfileView) {
+  profile = v;
+  const select = $<HTMLSelectElement>('profileSelect');
+  select.replaceChildren();
+  if (!v.profiles.length) {
+    const o = el('option', '', 'No interview yet. Click "New interview…"');
+    o.value = '';
+    select.append(o);
+  }
+  for (const p of v.profiles) {
+    const o = el('option', '', p.name);
+    o.value = p.id;
+    o.selected = p.active;
+    select.append(o);
+  }
+  const hasProfile = !!v.active;
+  for (const id of ['renameProfile', 'deleteProfile', 'chooseSheet', 'reloadSheet', 'review']) $<HTMLButtonElement>(id).disabled = !hasProfile;
+  renderSheet(v.sheet, v.sheetError);
+  $('phrasingState').textContent = v.phrasingStatus ?? (v.sheet?.phrasings ? `Knows ${v.sheet.phrasings} items' alternative phrasings.` : '');
+  renderMaterials(v);
+}
+
+$('profileSelect').addEventListener('change', async () => {
+  const id = $<HTMLSelectElement>('profileSelect').value;
+  if (id) renderProfile(await api.selectProfile(id));
+});
+$('newProfile').addEventListener('click', () => {
+  $('newProfileRow').hidden = false;
+  $<HTMLInputElement>('newProfileName').focus();
+});
+$('cancelProfile').addEventListener('click', () => ($('newProfileRow').hidden = true));
+async function createProfile() {
+  const name = $<HTMLInputElement>('newProfileName').value.trim();
+  if (!name) return;
+  renderProfile(await api.createProfile(name));
+  $<HTMLInputElement>('newProfileName').value = '';
+  $('newProfileRow').hidden = true;
+}
+$('createProfile').addEventListener('click', () => void createProfile());
+$('newProfileName').addEventListener('keydown', (e) => e.key === 'Enter' && void createProfile());
+$('renameProfile').addEventListener('click', async () => {
+  const name = window.prompt('New name for this interview:', profile.active?.name ?? '');
+  if (name && name.trim()) renderProfile(await api.renameProfile(name.trim()));
+});
+$('deleteProfile').addEventListener('click', async () => {
+  if (!profile.active) return;
+  if (window.confirm(`Delete the interview "${profile.active.name}"? Your files are not deleted, only this app's record of them.`)) {
+    renderProfile(await api.deleteProfile());
+  }
+});
+$('chooseSheet').addEventListener('click', async () => {
   try {
-    renderSummary(await api.openSheet());
+    renderProfile(await api.chooseSheet());
     $('sheetMsg').textContent = '';
   } catch (e) {
     $('sheetMsg').textContent = `Could not read that file: ${(e as Error).message}`;
   }
 });
-$('reloadSheet').addEventListener('click', async () => renderSummary(await api.reloadSheet()));
+$('reloadSheet').addEventListener('click', async () => renderProfile(await api.reloadSheet()));
 $('review').addEventListener('click', () => api.openReview());
-$('phrasings').addEventListener('click', async () => {
-  $('phrasingsState').textContent = 'Working…';
+$('template').addEventListener('click', async () => {
   try {
-    renderSummary(await api.generatePhrasings());
+    const path = await api.saveTemplate();
+    if (path) $('sheetMsg').textContent = `Saved the template to ${path}`;
   } catch (e) {
-    $('phrasingsState').textContent = (e as Error).message;
+    $('sheetMsg').textContent = (e as Error).message;
   }
 });
-api.on('progress', (p) => {
-  const { done, total } = p as { done: number; total: number };
-  $('phrasingsState').textContent = `Working… ${done}/${total}`;
-});
-api.on('sheet', (s) => renderSummary(s as SheetSummary));
+api.on('profile', (v) => renderProfile(v as ProfileView));
 
 // ---------------------------------------------------------------- audio capture
 
@@ -107,7 +169,6 @@ let silentSince = 0;
 
 async function startAudio(): Promise<void> {
   stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: { width: 320, height: 240, frameRate: 1 } });
-  // The screen track is required by the API; it is never used.
   for (const t of stream.getVideoTracks()) t.enabled = false;
   const audioTracks = stream.getAudioTracks();
   if (!audioTracks.length) throw new Error('macOS did not provide call audio. Check Screen & System Audio Recording permission.');
@@ -116,7 +177,7 @@ async function startAudio(): Promise<void> {
   const source = audioCtx.createMediaStreamSource(new MediaStream(audioTracks));
   const node = new AudioWorkletNode(audioCtx, 'pcm-capture');
   const mute = audioCtx.createGain();
-  mute.gain.value = 0; // keeps the graph running without playing anything
+  mute.gain.value = 0;
   source.connect(node).connect(mute).connect(audioCtx.destination);
   silentSince = Date.now();
   node.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; rms: number }>) => {
@@ -126,7 +187,7 @@ async function startAudio(): Promise<void> {
     if (e.data.rms > 0.002) silentSince = Date.now();
     else if (Date.now() - silentSince > 20000) {
       $('sessionMsg').textContent =
-        'No call audio for 20 seconds. If someone is talking, open System Settings → Privacy & Security → Screen & System Audio Recording and allow Interview Banner, then restart it.';
+        'No call audio for 20 seconds. If someone is talking, open System Settings → Privacy & Security → Screen & System Audio Recording and allow Interview Banner 2, then restart it.';
       silentSince = Date.now();
     }
   };
@@ -152,11 +213,10 @@ function renderSession(s: SessionState) {
 
 $('start').addEventListener('click', async () => {
   $('sessionMsg').textContent = '';
-  if (!summary?.approved) {
+  if (!profile.sheet?.approved) {
     $('sessionMsg').textContent = 'Review and approve your Sheet first.';
     return;
   }
-  // Ask macOS for the call audio first, while this click still counts as a user action.
   if (settings.hasDeepgramKey) {
     try {
       await startAudio();
@@ -177,7 +237,7 @@ $('stop').addEventListener('click', async () => {
 async function ask() {
   const q = $<HTMLInputElement>('testq').value.trim();
   if (!q) return;
-  if (!summary?.approved) {
+  if (!profile.sheet?.approved) {
     $('sessionMsg').textContent = 'Review and approve your Sheet first.';
     return;
   }
@@ -203,7 +263,7 @@ api.on('log', (entry) => {
   const time = new Date(at).toLocaleTimeString();
   let line = `${time}  ${msg}`;
   if (data && msg === 'decision') line += `  "${data.question}" → ${data.action} ${(data.ids as string[]).join('+')} (${data.latencyMs} ms)`;
-  else if (data && msg === 'instant') line += `  "${data.question}"`;
+  else if (data && (msg === 'instant' || msg === 'draft-start')) line += `  "${data.question}"`;
   else if (data) line += `  ${JSON.stringify(data).slice(0, 160)}`;
   const log = $('log');
   log.textContent = `${line}\n${log.textContent ?? ''}`.slice(0, 8000);
@@ -211,6 +271,6 @@ api.on('log', (entry) => {
 
 void (async () => {
   renderSettings(await api.getSettings());
-  renderSummary(await api.getSummary());
+  renderProfile(await api.getProfile());
   renderSession(session);
 })();

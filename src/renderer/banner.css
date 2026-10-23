@@ -179,6 +179,21 @@ button.icon {
   font-style: italic;
 }
 
+.draft {
+  color: var(--bridge);
+}
+
+.unverified {
+  text-decoration: underline dotted rgba(255, 120, 120, 0.9);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.18em;
+}
+
+[data-mode='drafted'] #state {
+  background: var(--bridge);
+  color: #2a1d00;
+}
+
 .unmet {
   text-decoration: underline dotted var(--underline);
   text-decoration-thickness: 2px;

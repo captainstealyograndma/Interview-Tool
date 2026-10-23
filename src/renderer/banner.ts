@@ -35,6 +35,7 @@ function updateProgress() {
 
 function sourceText(v: BannerView): string {
   if (v.mode === 'idle') return '';
+  if (v.mode === 'drafted') return 'not from your Sheet';
   if (v.source === 'claude') return v.latencyMs ? `Claude · ${(v.latencyMs / 1000).toFixed(1)}s` : 'Claude';
   if (v.source === 'offline') return 'instant match (Claude unavailable)';
   if (v.source === 'manual') return 'chosen by you';
@@ -46,8 +47,9 @@ function render(v: BannerView) {
     !current || current.turn !== v.turn || current.mode !== v.mode || current.blocks[0]?.piece !== v.blocks[0]?.piece || current.label !== v.label;
   current = v;
   root.dataset.mode = v.mode;
-  $('state').textContent = v.mode === 'provisional' ? 'listening · likely' : v.mode === 'not-in-sheet' ? 'NOT IN SHEET' : '';
-  $('label').textContent = v.mode === 'not-in-sheet' ? '' : v.label;
+  $('state').textContent =
+    v.mode === 'provisional' ? 'listening · likely' : v.mode === 'not-in-sheet' ? 'NOT IN SHEET' : v.mode === 'drafted' ? (v.drafting ? 'DRAFTING…' : 'DRAFTED') : '';
+  $('label').textContent = v.mode === 'not-in-sheet' || v.mode === 'drafted' ? '' : v.label;
   $('cue').textContent = v.cues.join('  ·  ');
   $('source').textContent = sourceText(v);
   const ru = $<HTMLButtonElement>('runnerup');
@@ -75,6 +77,11 @@ function render(v: BannerView) {
       script.append(l);
       renderBlocks(script, c.blocks);
     }
+  } else if (v.mode === 'drafted' && !v.blocks.length) {
+    const s = document.createElement('span');
+    s.className = 'idle-text';
+    s.textContent = 'Drafting an answer from your materials…';
+    script.append(s);
   } else {
     renderBlocks(script, v.blocks, v.unmetBackrefs);
   }
