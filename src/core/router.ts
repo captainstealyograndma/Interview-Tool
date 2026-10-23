@@ -14,6 +14,8 @@ export interface RouteRequest {
   recent: string[];
   /** Pieces already shown, oldest first. */
   shown: { id: string; label: string }[];
+  /** A correction when a previous pick was rejected. */
+  note?: string;
 }
 
 export interface RouteDecision {
@@ -35,7 +37,9 @@ export interface Router {
 
 export const ROUTER_INSTRUCTIONS = `You route live interview questions to the candidate's own prepared answers. The candidate reads your selection aloud from a teleprompter, so every word must come from their Sheet exactly as written. You never write answer text. You only choose ids from the Sheet catalog that follows.
 
-Each request gives you what the interviewer just said, earlier interviewer turns, and which pieces have already been shown. Choose one action:
+Each request gives you what the interviewer just said, earlier interviewer turns, and which pieces have already been shown. What the interviewer "just said" may contain a preamble before the real question ("That's helpful context. Let me ask a follow-up then. Tell me about a time…"): route the actual question, and ignore the preamble. When the interviewer says "follow-up" or "another question", that is about their own conversation, not about the Sheet's follow-up pieces. If the text contains two different questions, route the last complete one; if it is one question asked in pieces ("Tell me about a time you failed. What was the situation? How did you handle it?"), treat it as one question.
+
+Choose one action:
 - "show": the interviewer asked the candidate something the Sheet answers. Put the ids to show, in order, in "ids".
 - "not_in_sheet": the interviewer asked the candidate something the Sheet does not answer. Put up to two closest ids in "closest". Do not stretch a loosely related piece into an answer; flagging is better than showing the wrong script.
 - "ignore": small talk with no Sheet answer, the interviewer describing themselves, the team, the role or the firm, acknowledgements ("great", "thanks", "mm-hmm"), or anything that is not a question or prompt for the candidate.
@@ -43,7 +47,7 @@ Each request gives you what the interviewer just said, earlier interviewer turns
 How to choose, following the Sheet's own guidance first:
 1. Behavioral questions ("tell me about a time", "give me an example", "describe a situation"): choose the Question Finder entry [Q…] that matches what they asked. It already expands to its opening line plus the story the Sheet names, so do not add that story again. If no entry matches but a story's "use it for" fits, choose the story [S…] directly.
 2. Direct questions ("what's your…", "why…", "how do you…", "where do you see yourself…"): choose the Core narrative, Classic or Tough answer whose question matches. Prefer these over Question Finder entries when the question is not asking for an example.
-3. Short follow-ups ("who won?", "what would you do differently?", "how did that feel?") refer to what was just shown: choose that story's follow-up [S….F…] when one fits.
+3. A Sheet follow-up [S….F…] is only for a short question that digs into the story that was just shown ("who won?", "what would you do differently?", "how did that feel?"). Never choose a follow-up for a new question, for a behavioral question, or when its story has not just been shown; in those cases the follow-up does not count as the Sheet covering the question.
 4. "Tell me more", "go on", "what happened": choose the piece that the last shown piece points to.
 5. When the interviewer points to a resume line or past job, choose the Resume Walkthrough piece [R…]. If they then ask for more, choose the story it points to.
 6. Conditional answers [….I…] only when the interviewer asks exactly that.
@@ -83,6 +87,7 @@ export function requestText(req: RouteRequest): string {
     req.shown.length ? `Already shown (oldest first): ${req.shown.map((s) => `${s.id} (${s.label})`).join('; ')}` : 'Already shown: nothing yet',
   );
   lines.push('', `The interviewer just said: "${req.question}"`);
+  if (req.note) lines.push('', `Note: ${req.note}`);
   return lines.join('\n');
 }
 
